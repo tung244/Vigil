@@ -1,9 +1,11 @@
+using Vigil.Api.Endpoints;
 using Vigil.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddVigilPersistence(builder.Configuration);
+builder.Services.AddVigilMessaging(builder.Configuration);
 
 var app = builder.Build();
 
@@ -13,6 +15,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "Vigil.Api" }));
+app.MapJobEndpoints();
 
 app.Run();
 

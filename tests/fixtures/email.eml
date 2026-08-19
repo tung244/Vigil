@@ -1,0 +1,36 @@
+From: "Digital Banking Team" <notifications@secure-review-mail.example>
+To: employee@example.com
+Subject: Action recommended: review recent profile activity
+Date: Mon, 23 Mar 2026 14:05:00 +0700
+Message-ID: <sim-20260323-140500-4412@secure-review-mail.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: 8bit
+Reply-To: support@secure-review-mail.example
+
+<html>
+  <body style="font-family:Segoe UI,Arial,sans-serif;color:#1f2937;line-height:1.6;">
+    <p>Hello,</p>
+
+    <p>
+      We noticed a recent change in profile activity associated with your digital banking access.
+      No immediate action is required if this was you, but we recommend reviewing the activity summary
+      to confirm your details are current.
+    </p>
+
+    <p>
+      Review summary:
+      <a href="https://training-portal.example/review-session">Open activity summary</a>
+    </p>
+
+    <p style="font-size:12px;color:#6b7280;">
+      This simulation message is intended for internal security awareness testing only.
+      Do not enter passwords, card data, or one-time codes into non-official portals.
+    </p>
+
+    <p>
+      Regards,<br/>
+      Digital Banking Team
+    </p>
+  </body>
+</html>
