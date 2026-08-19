@@ -1,0 +1,31 @@
+# .NET
+bin/
+obj/
+out/
+*.user
+*.suo
+.vs/
+
+# Rider / VS Code
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Build artifacts
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# Secrets & local config
+.env
+.env.*
+!.env.example
+appsettings.*.Local.json
+secrets.json
+
+# Models & data (large binaries stay out of git)
+models/*.onnx
+
+# OS
+Thumbs.db
+.DS_Store
