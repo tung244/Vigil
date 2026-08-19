@@ -32,3 +32,6 @@ Thumbs.db
 
 # Uploaded artifacts (local dev storage)
 uploads/
+
+# Python tooling
+__pycache__/
