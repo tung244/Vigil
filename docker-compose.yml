@@ -6,8 +6,9 @@ services:
       POSTGRES_USER: vigil
       POSTGRES_PASSWORD: vigil_dev_password
       POSTGRES_DB: vigil
+    # Host port 55432 because 5432 is already taken by a local Postgres service.
     ports:
-      - "5432:5432"
+      - "55432:5432"
     volumes:
       - vigil-pgdata:/var/lib/postgresql/data
     healthcheck:
