@@ -1,0 +1,13 @@
+eventTime,eventName,eventSource,sourceIPAddress,userIdentityuserName,errorCode,userAgent
+2026-03-23T09:00:00Z,GetObject,s3.amazonaws.com,10.0.0.1,alice,,console
+2026-03-23T09:05:00Z,PutObject,s3.amazonaws.com,10.0.0.1,alice,,console
+2026-03-23T09:10:00Z,GetObject,s3.amazonaws.com,10.0.0.1,alice,,console
+2026-03-23T09:00:30Z,GetObject,s3.amazonaws.com,10.0.0.2,bob,,console
+2026-03-23T09:06:00Z,PutObject,s3.amazonaws.com,10.0.0.2,bob,,console
+2026-03-23T09:11:00Z,ListBuckets,s3.amazonaws.com,10.0.0.2,bob,,console
+2026-03-23T09:01:00Z,GetObject,s3.amazonaws.com,10.0.0.3,carol,,console
+2026-03-23T09:07:00Z,PutObject,s3.amazonaws.com,10.0.0.3,carol,,console
+2026-03-23T09:12:00Z,GetObject,s3.amazonaws.com,10.0.0.3,carol,,console
+2026-03-23T09:02:00Z,GetObject,s3.amazonaws.com,10.0.0.4,dave,,console
+2026-03-23T09:08:00Z,PutObject,s3.amazonaws.com,10.0.0.4,dave,,console
+2026-03-23T09:13:00Z,ListBuckets,s3.amazonaws.com,10.0.0.4,dave,,console

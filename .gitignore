@@ -29,3 +29,6 @@ models/*.onnx
 # OS
 Thumbs.db
 .DS_Store
+
+# Uploaded artifacts (local dev storage)
+uploads/

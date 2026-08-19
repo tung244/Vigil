@@ -1,6 +1,12 @@
+using Vigil.Infrastructure;
+using Vigil.Infrastructure.Tier1;
+using Vigil.Worker;
+
 var builder = Host.CreateApplicationBuilder(args);
 
-// Queue consumer + Tier 1/Tier 2 pipeline are registered here from Step 4 onward.
+builder.Services.AddVigilPersistence(builder.Configuration);
+builder.Services.AddScoped<Tier1Pipeline>();
+builder.Services.AddHostedService<JobConsumerService>();
 
 var host = builder.Build();
 host.Run();
