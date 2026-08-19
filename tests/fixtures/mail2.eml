@@ -1,0 +1,29 @@
+From: "ACB Bank Notifications" <no-reply@acb.com.vn>
+To: customer@example.com
+Subject: Transaction Notification for Your Account Ending 4821
+Date: Sat, 21 Mar 2026 09:45:30 +0700
+Message-ID: <acb-notify-4821-1742525130@acb.com.vn>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 8bit
+
+Dear Nguyen Vu Giang,
+
+A new transaction has been recorded on your account ending in 4821.
+
+Transaction details:
+- Type: Debit Card Payment
+- Amount: 425,000 VND
+- Merchant: ABC Bookstore
+- Time: 21 Mar 2026 09:44 AM (GMT+7)
+- Reference: ACB-TRX-20260321-4821
+
+If you recognize this transaction, no further action is required.
+
+If you do not recognize this transaction, please contact ACB through official channels listed on the bank's website or mobile application.
+
+This is an automated notification. Please do not reply to this email.
+
+Best regards,
+ACB Bank
+Automated Notification Service

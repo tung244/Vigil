@@ -15,6 +15,7 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.61" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,8 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\fixtures\**\*" Link="fixtures\%(RecursiveDir)%(Filename)%(Extension)"
-          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\**\*" Link="fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

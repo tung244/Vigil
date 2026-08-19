@@ -1,0 +1,55 @@
+From: "Global Secure Bank" <security-alert@globalsecure-bank-support.com>
+To: victim@example.com
+Subject: Urgent Action Required: Your Account Will Be Limited Today
+Date: Sat, 21 Mar 2026 09:42:10 +0700
+Message-ID: <8437291.1742524930@globalsecure-bank-support.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: 8bit
+Reply-To: support-team@fast-review-access.com
+X-Priority: 1
+
+<html>
+  <body style="font-family: Arial, sans-serif; color:#222;">
+    <p>Dear Customer,</p>
+
+    <p>
+      We detected unusual activity on your banking profile and your online access
+      may be restricted within <b>12 hours</b> unless you confirm your information.
+    </p>
+
+    <p>
+      Please verify your account immediately by clicking the secure link below:
+    </p>
+
+    <p>
+      <a href="http://globalsecure-bank-verify-login.com/session/review">
+        Confirm Your Account Now
+      </a>
+    </p>
+
+    <p>
+      Failure to complete verification today may result in temporary suspension
+      of card usage, transfers, and mobile banking access.
+    </p>
+
+    <p>
+      For security reasons, have the following ready:
+    </p>
+    <ul>
+      <li>Internet banking username</li>
+      <li>Password</li>
+      <li>Card number</li>
+      <li>SMS verification code</li>
+    </ul>
+
+    <p>
+      Thank you for your immediate cooperation.
+    </p>
+
+    <p>
+      Security Department<br/>
+      Global Secure Bank
+    </p>
+  </body>
+</html>

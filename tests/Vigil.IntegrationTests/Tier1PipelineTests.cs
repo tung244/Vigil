@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vigil.Core.Domain;
+using Vigil.Core.Ml;
 using Vigil.Infrastructure.Persistence;
 using Vigil.Infrastructure.Tier1;
 using Xunit;
@@ -52,8 +53,9 @@ public class Tier1PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
         var result = job.Tier1Result;
         Assert.NotNull(result);
         Assert.Equal(Tier1Verdict.Suspicious, result!.Verdict);
-        Assert.Null(result.MlScore); // ONNX classifier lands in Step 5
+        Assert.Equal(FakePhishingClassifier.LowScore, result.MlScore);
         Assert.Contains("urgent_action_required", result.RuleCheckResults);
+        Assert.Contains("ml_phishing", result.RuleCheckResults);
         // PII scrubbing: sender address must not survive into the stored payload.
         Assert.DoesNotContain("notifications@secure-review-mail.example", result.ScrubbedPayload);
         Assert.Contains("[REDACTED_EMAIL]", result.ScrubbedPayload);
@@ -97,6 +99,68 @@ public class Tier1PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
         Assert.NotNull(job.FinishedAt);
         Assert.NotNull(job.Tier1Result);
         Assert.Equal(Tier1Verdict.Benign, job.Tier1Result!.Verdict);
+    }
+
+    [Fact]
+    public async Task High_ml_score_escalates_rule_benign_email_to_analyzing()
+    {
+        var jobId = await UploadFixtureAsync("benign.eml");
+
+        var outcome = await RunPipelineAsync(
+            jobId, new FakePhishingClassifier(FakePhishingClassifier.HighScore));
+
+        Assert.Equal(Tier1Outcome.Completed, outcome);
+
+        await using var db = CreateDbContext();
+        var job = await db.AnalysisJobs.Include(j => j.Tier1Result)
+            .SingleAsync(j => j.Id == jobId);
+
+        // No rule fires on the benign fixture; the ML score alone escalates.
+        Assert.Equal(JobStatus.Analyzing, job.Status);
+        Assert.NotNull(job.Tier1Result);
+        Assert.Equal(Tier1Verdict.Suspicious, job.Tier1Result!.Verdict);
+        Assert.Equal(FakePhishingClassifier.HighScore, job.Tier1Result.MlScore);
+        Assert.Contains("ml_phishing", job.Tier1Result.RuleCheckResults);
+    }
+
+    [Fact]
+    public async Task Low_ml_score_keeps_rule_benign_email_done()
+    {
+        var jobId = await UploadFixtureAsync("benign.eml");
+
+        var outcome = await RunPipelineAsync(jobId);
+
+        Assert.Equal(Tier1Outcome.Completed, outcome);
+
+        await using var db = CreateDbContext();
+        var job = await db.AnalysisJobs.Include(j => j.Tier1Result)
+            .SingleAsync(j => j.Id == jobId);
+
+        Assert.Equal(JobStatus.Done, job.Status);
+        Assert.NotNull(job.Tier1Result);
+        Assert.Equal(Tier1Verdict.Benign, job.Tier1Result!.Verdict);
+        Assert.Equal(FakePhishingClassifier.LowScore, job.Tier1Result.MlScore);
+    }
+
+    [Fact]
+    public async Task Disabled_classifier_leaves_ml_score_null()
+    {
+        var jobId = await UploadFixtureAsync("benign.eml");
+
+        var outcome = await RunPipelineAsync(jobId, new FakePhishingClassifier(0.0, enabled: false));
+
+        Assert.Equal(Tier1Outcome.Completed, outcome);
+
+        await using var db = CreateDbContext();
+        var job = await db.AnalysisJobs.Include(j => j.Tier1Result)
+            .SingleAsync(j => j.Id == jobId);
+
+        Assert.Equal(JobStatus.Done, job.Status);
+        Assert.NotNull(job.Tier1Result);
+        Assert.Null(job.Tier1Result!.MlScore);
+        // jsonb normalizes whitespace, so assert on the bare tokens.
+        Assert.Contains("ml_phishing", job.Tier1Result.RuleCheckResults);
+        Assert.Contains("skipped", job.Tier1Result.RuleCheckResults);
     }
 
     [Fact]
@@ -148,10 +212,12 @@ public class Tier1PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
         return accepted.JobId;
     }
 
-    private async Task<Tier1Outcome> RunPipelineAsync(Guid jobId)
+    private async Task<Tier1Outcome> RunPipelineAsync(Guid jobId, IPhishingClassifier? classifier = null)
     {
         await using var db = CreateDbContext();
-        var pipeline = new Tier1Pipeline(db, NullLogger<Tier1Pipeline>.Instance);
+        var pipeline = new Tier1Pipeline(
+            db, classifier ?? new FakePhishingClassifier(FakePhishingClassifier.LowScore),
+            NullLogger<Tier1Pipeline>.Instance);
         return await pipeline.ProcessAsync(jobId);
     }
 
@@ -161,4 +227,15 @@ public class Tier1PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
             .Options);
 
     private sealed record JobAcceptedTestDto(Guid JobId, string Status);
+
+    /// <summary>Deterministic stand-in for the ONNX classifier in pipeline tests.</summary>
+    private sealed class FakePhishingClassifier(double score, bool enabled = true) : IPhishingClassifier
+    {
+        public const double LowScore = 0.05;
+        public const double HighScore = 0.95;
+
+        public bool Enabled { get; } = enabled;
+        public double Threshold => 0.7;
+        public double Classify(string? subject, string body) => score;
+    }
 }

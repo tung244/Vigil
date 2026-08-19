@@ -69,13 +69,26 @@ public class UploadApiTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
             Assert.True(File.Exists(job.StoragePath));
         }
 
-        // Message for this job is in the queue.
+        // Message for this job is in the queue. The queue is shared with the
+        // parallel Tier1PipelineTests uploads, so drain until our message shows
+        // up (nothing else consumes it; the Worker is not running here).
         await using (var connection = await RabbitConnectionAsync())
         await using (var channel = await connection.CreateChannelAsync())
         {
-            var message = await channel.BasicGetAsync(RabbitMqJobQueue.QueueName, autoAck: true);
-            Assert.NotNull(message);
-            Assert.Contains(accepted.JobId.ToString(), Encoding.UTF8.GetString(message!.Body.Span));
+            var found = false;
+            for (var attempt = 0; attempt < 20 && !found; attempt++)
+            {
+                var message = await channel.BasicGetAsync(RabbitMqJobQueue.QueueName, autoAck: true);
+                if (message is null)
+                {
+                    break;
+                }
+
+                found = Encoding.UTF8.GetString(message.Body.Span)
+                    .Contains(accepted.JobId.ToString(), StringComparison.Ordinal);
+            }
+
+            Assert.True(found, "No RabbitMQ message carried the uploaded job id.");
         }
 
         // Cleanup: keep the shared test database readable between runs.

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Vigil.Core.Domain;
+using Vigil.Core.Ml;
 using Vigil.Core.Security;
 using Vigil.Core.Tier1;
 using Vigil.Infrastructure.Persistence;
@@ -26,13 +27,17 @@ public enum Tier1Outcome
 
 /// <summary>
 /// Drives one job through Tier 1: status transition Queued → Filtering, PII
-/// scrubbing, artifact-specific rule checks, tier1_results persistence and the
-/// final status transition. Tier 2 (Step 7) picks up jobs left in Analyzing.
-/// Processing exceptions are caught here and recorded on the job; only
-/// infrastructure failures (e.g. the database being unreachable while saving)
-/// propagate so the caller can requeue the message.
+/// scrubbing, artifact-specific rule checks, ONNX phishing scoring for .eml
+/// artifacts, tier1_results persistence and the final status transition.
+/// Tier 2 (Step 7) picks up jobs left in Analyzing. Processing exceptions are
+/// caught here and recorded on the job; only infrastructure failures (e.g. the
+/// database being unreachable while saving) propagate so the caller can
+/// requeue the message.
 /// </summary>
-public sealed class Tier1Pipeline(VigilDbContext db, ILogger<Tier1Pipeline> logger)
+public sealed class Tier1Pipeline(
+    VigilDbContext db,
+    IPhishingClassifier phishingClassifier,
+    ILogger<Tier1Pipeline> logger)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -69,8 +74,19 @@ public sealed class Tier1Pipeline(VigilDbContext db, ILogger<Tier1Pipeline> logg
 
             // Rules run on the raw artifact (PII can itself be an IOC); the
             // scrubbed text is what later tiers and LLM agents are allowed to see.
+            // The ML classifier intentionally scores the scrubbed text: that is
+            // the payload the rest of the system reasons about, and it keeps the
+            // phishing score reproducible from tier1_results alone.
             var scrubbedPayload = PiiScrubber.Scrub(rawContent);
             var report = RunRuleChecks(job.FileType, rawContent);
+            var mlScore = ScoreWithClassifier(job.FileType, scrubbedPayload, report);
+
+            // Verdict policy: any matched rule OR an ML phishing score at/above
+            // the configured threshold escalates to Suspicious.
+            var verdict = report.Verdict == Tier1Verdict.Suspicious
+                          || (mlScore is not null && mlScore >= phishingClassifier.Threshold)
+                ? Tier1Verdict.Suspicious
+                : Tier1Verdict.Benign;
 
             db.Tier1Results.Add(new Tier1Result
             {
@@ -78,11 +94,11 @@ public sealed class Tier1Pipeline(VigilDbContext db, ILogger<Tier1Pipeline> logg
                 JobId = job.Id,
                 ScrubbedPayload = scrubbedPayload,
                 RuleCheckResults = JsonSerializer.Serialize(report, JsonOptions),
-                MlScore = null, // ONNX classifier arrives in Step 5
-                Verdict = report.Verdict
+                MlScore = mlScore,
+                Verdict = verdict
             });
 
-            if (report.Verdict == Tier1Verdict.Suspicious)
+            if (verdict == Tier1Verdict.Suspicious)
             {
                 job.Status = JobStatus.Analyzing;
                 job.CurrentStep = "tier2.pending"; // Tier 2 lands in Step 7
@@ -97,8 +113,9 @@ public sealed class Tier1Pipeline(VigilDbContext db, ILogger<Tier1Pipeline> logg
             await db.SaveChangesAsync(cancellationToken);
 
             logger.LogInformation(
-                "Job {JobId} Tier 1 complete: {Verdict} (rules={RuleCount}, score={Score})",
-                jobId, report.Verdict, report.MatchedRules.Count, report.RiskScore);
+                "Job {JobId} Tier 1 complete: {Verdict} (rules={RuleCount}, score={Score}, mlScore={MlScore})",
+                jobId, verdict, report.MatchedRules.Count, report.RiskScore,
+                mlScore?.ToString("F3") ?? "n/a");
 
             return Tier1Outcome.Completed;
         }
@@ -114,6 +131,34 @@ public sealed class Tier1Pipeline(VigilDbContext db, ILogger<Tier1Pipeline> logg
 
             return Tier1Outcome.Failed;
         }
+    }
+
+    /// <summary>
+    /// Runs the ONNX phishing classifier on the scrubbed subject+body of .eml
+    /// artifacts. Returns null when ML is disabled or the artifact is not an
+    /// email; the outcome is recorded as an audit check on the rule report.
+    /// </summary>
+    private double? ScoreWithClassifier(ArtifactType artifactType, string scrubbedPayload, Tier1RuleReport report)
+    {
+        if (artifactType != ArtifactType.Eml)
+        {
+            return null; // the phishing classifier only applies to email text
+        }
+
+        if (!phishingClassifier.Enabled)
+        {
+            report.Checks.Add(new RuleCheck(
+                "ml_phishing", "skipped", "ML scoring disabled (Ml:Enabled=false)."));
+            return null;
+        }
+
+        var message = EmlParser.Parse(scrubbedPayload);
+        var score = phishingClassifier.Classify(message.Subject, message.Body);
+        var flagged = score >= phishingClassifier.Threshold;
+        report.Checks.Add(new RuleCheck(
+            "ml_phishing", flagged ? "flag" : "pass",
+            $"phishing probability {score:F3} (threshold {phishingClassifier.Threshold:F2})."));
+        return score;
     }
 
     private static Tier1RuleReport RunRuleChecks(ArtifactType artifactType, string rawContent) =>

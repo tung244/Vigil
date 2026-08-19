@@ -7,8 +7,8 @@ namespace Vigil.Core.Tier1;
 /// Tier 1 rule checks for .eml artifacts, ported from the Python
 /// <c>email_analyst/tier1_filter.py</c>: authentication header checks
 /// (SPF/DKIM/DMARC), phishing keyword rules, suspicious/lookalike sender
-/// domains and URL/IP extraction. The ML classifier score from the old system
-/// arrives separately in Step 5 (ONNX).
+/// domains and URL/IP extraction. The ONNX phishing classifier score (Step 5)
+/// is computed separately in <c>Tier1Pipeline</c> and OR-ed into the verdict.
 /// </summary>
 public static partial class EmailRuleChecks
 {

@@ -20,7 +20,11 @@ public sealed class Tier1RuleReport
     /// <summary>Explainable 0–100 score built from the matched rules and extractions.</summary>
     public int RiskScore { get; set; }
 
-    /// <summary>Security-first: a single matched rule escalates to Suspicious.</summary>
+    /// <summary>
+    /// Security-first: a single matched rule escalates to Suspicious. Note the
+    /// pipeline additionally escalates when the ML phishing score reaches the
+    /// configured threshold; this property reflects the rule-only verdict.
+    /// </summary>
     public Tier1Verdict Verdict { get; set; } = Tier1Verdict.Benign;
 
     /// <summary>Stable rule identifiers that fired, e.g. "spf_fail", "recon_burst:4".</summary>
