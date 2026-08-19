@@ -7,6 +7,7 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddVigilPersistence(builder.Configuration);
 builder.Services.AddVigilMachineLearning(builder.Configuration, builder.Environment.ContentRootPath);
 builder.Services.AddVigilThreatIntel(builder.Configuration);
+builder.Services.AddVigilLlm(builder.Configuration);
 builder.Services.AddScoped<Tier1Pipeline>();
 builder.Services.AddHostedService<JobConsumerService>();
 

@@ -4,12 +4,14 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Vigil.Infrastructure.Messaging;
 using Vigil.Infrastructure.Tier1;
+using Vigil.Infrastructure.Tier2;
 
 namespace Vigil.Worker;
 
 /// <summary>
 /// Consumes job messages from the durable <c>vigil.jobs</c> queue and runs the
-/// Tier 1 pipeline for each. Acking policy:
+/// Tier 1 pipeline for each, followed by Tier 2 (deterministic agent state
+/// machine) when Tier 1 escalates to Suspicious. Acking policy:
 /// <list type="bullet">
 /// <item>Processed (or marked Failed) jobs are acked — no infinite retry.</item>
 /// <item>Unparseable messages are nacked without requeue (poison messages).</item>
@@ -62,7 +64,16 @@ public sealed class JobConsumerService(
                 using var scope = scopeFactory.CreateScope();
                 var pipeline = scope.ServiceProvider.GetRequiredService<Tier1Pipeline>();
                 var outcome = await pipeline.ProcessAsync(jobId, stoppingToken);
-                logger.LogInformation("Job {JobId} processed: {Outcome}", jobId, outcome);
+                logger.LogInformation("Job {JobId} Tier 1: {Outcome}", jobId, outcome);
+
+                if (outcome == Tier1Outcome.Completed)
+                {
+                    // No-op unless Tier 1 left the job Suspicious/Analyzing.
+                    var tier2 = scope.ServiceProvider.GetRequiredService<Tier2Pipeline>();
+                    var tier2Run = await tier2.ProcessAsync(jobId, stoppingToken);
+                    logger.LogInformation("Job {JobId} Tier 2: {Outcome}", jobId, tier2Run.Outcome);
+                }
+
                 await channel.BasicAckAsync(args.DeliveryTag, multiple: false);
             }
             catch (Exception ex)

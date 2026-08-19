@@ -7,10 +7,12 @@ using Polly;
 using Vigil.Core.Messaging;
 using Vigil.Core.Ml;
 using Vigil.Core.ThreatIntel;
+using Vigil.Infrastructure.Llm;
 using Vigil.Infrastructure.Messaging;
 using Vigil.Infrastructure.Ml;
 using Vigil.Infrastructure.Persistence;
 using Vigil.Infrastructure.ThreatIntel;
+using Vigil.Infrastructure.Tier2;
 
 namespace Vigil.Infrastructure;
 
@@ -98,6 +100,31 @@ public static class DependencyInjection
                 2, attempt => TimeSpan.FromMilliseconds(250 * attempt)));
 
         services.AddScoped<IThreatIntelService, ThreatIntelService>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the LLM stack: <see cref="LlmOptions"/> from the "Llm" config
+    /// section (Provider default "gemini", ApiKey default empty, Model default
+    /// "gemini-2.5-flash"), the singleton <see cref="LlmKernelProvider"/> (null
+    /// kernel when no key — the worker starts anyway) and the scoped Tier 2
+    /// pipeline with its stages.
+    /// </summary>
+    public static IServiceCollection AddVigilLlm(
+        this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton(new LlmOptions
+        {
+            Provider = configuration["Llm:Provider"] ?? "gemini",
+            ApiKey = configuration["Llm:ApiKey"] ?? "",
+            Model = configuration["Llm:Model"] ?? "gemini-2.5-flash"
+        });
+        services.AddSingleton<LlmKernelProvider>();
+
+        services.AddScoped<EmailAnalystStage>();
+        services.AddScoped<ThreatIntelStage>();
+        services.AddScoped<Tier2Pipeline>();
 
         return services;
     }
