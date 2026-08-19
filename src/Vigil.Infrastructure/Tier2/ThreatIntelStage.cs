@@ -46,7 +46,10 @@ public sealed class ThreatIntelStage(
 internal static class RuleIocSeeder
 {
     /// <summary>The parts of the stored Tier 1 rule report Tier 2 cares about.</summary>
-    public sealed record Tier1RuleData(IReadOnlyList<string> MatchedRules, JsonElement Extracted);
+    public sealed record Tier1RuleData(
+        IReadOnlyList<string> MatchedRules,
+        JsonElement Extracted,
+        int RiskScore);
 
     /// <summary>Reads the stored rule report; null when the payload is corrupt.</summary>
     public static Tier1RuleData? TryReadReport(string ruleCheckResultsJson)
@@ -69,7 +72,13 @@ internal static class RuleIocSeeder
                 ? extractedElement.Clone()
                 : (JsonElement?)null;
 
-            return extracted is null ? null : new Tier1RuleData(matchedRules, extracted.Value);
+            var riskScore = root.TryGetProperty("riskScore", out var scoreElement)
+                            && scoreElement.ValueKind == JsonValueKind.Number
+                            && scoreElement.TryGetInt32(out var score)
+                ? score
+                : 0;
+
+            return extracted is null ? null : new Tier1RuleData(matchedRules, extracted.Value, riskScore);
         }
         catch (JsonException)
         {

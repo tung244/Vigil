@@ -40,6 +40,21 @@ public class Tier2PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
         }
         """;
 
+    /// <summary>Valid synthesis report answering the email analysis above.</summary>
+    private const string CannedSynthesis = """
+        {
+          "risk_score": 8.2,
+          "severity": "critical",
+          "summary_markdown": "# Incident Report\nCredential-harvesting phishing email with a lookalike review portal.",
+          "mitre_techniques": ["T1566.002"],
+          "recommended_actions": ["Block the sender domain", "Reset affected credentials"],
+          "evidence_trail": [
+            {"claim": "Sender fails SPF", "source": "rule:spf_fail"},
+            {"claim": "Phishing lure URL present", "source": "ioc:url=https://training-portal.example/review-session"}
+          ]
+        }
+        """;
+
     private readonly VigilApiFactory _factory;
     private readonly List<Guid> _createdJobIds = [];
 
@@ -59,18 +74,19 @@ public class Tier2PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
     {
         var jobId = await UploadFixtureAsync("email.eml");
         await RunTier1Async(jobId);
-        var fake = new FakeChatCompletionService(CannedAnalysis);
+        var fake = new FakeChatCompletionService(CannedAnalysis, CannedSynthesis);
 
         var run = await CreateTier2Pipeline(WithFakeChat(fake), out var db).ProcessAsync(jobId);
 
         Assert.Equal(Tier2Outcome.Completed, run.Outcome);
         Assert.NotNull(run.EmailAnalysis);
         Assert.Equal(EmailVerdict.Phishing, run.EmailAnalysis!.Status);
-        Assert.Equal(1, fake.CallCount);
+        Assert.NotNull(run.Synthesis);
+        Assert.Equal(2, fake.CallCount);
 
         var job = await db.AnalysisJobs.Include(j => j.Iocs).SingleAsync(j => j.Id == jobId);
-        Assert.Equal(JobStatus.Analyzing, job.Status);
-        Assert.Equal("tier2.synthesis_pending", job.CurrentStep);
+        Assert.Equal(JobStatus.Done, job.Status);
+        Assert.Equal("done", job.CurrentStep);
         Assert.Null(job.ErrorMessage);
 
         // The LLM-only IOC was persisted; the rule-overlapping one was not duplicated.
@@ -112,10 +128,15 @@ public class Tier2PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
 
         Assert.Equal(Tier2Outcome.Completed, run.Outcome);
         Assert.Null(run.EmailAnalysis);
+        Assert.NotNull(run.Synthesis);
 
         var job = await db.AnalysisJobs.Include(j => j.Iocs).SingleAsync(j => j.Id == jobId);
-        Assert.Equal(JobStatus.Analyzing, job.Status);
-        Assert.Equal("tier2.synthesis_pending", job.CurrentStep);
+        Assert.Equal(JobStatus.Done, job.Status);
+        Assert.Equal("done", job.CurrentStep);
+
+        // Without an LLM key, synthesis falls back to the deterministic report.
+        var report = await db.Reports.SingleAsync(r => r.JobId == jobId);
+        Assert.Contains(DeterministicSynthesis.FallbackMarker, report.SummaryMarkdown);
 
         // Rule IOCs from the CSV report (source IPs) were seeded and enriched.
         Assert.NotEmpty(job.Iocs);
@@ -150,16 +171,16 @@ public class Tier2PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
     {
         var jobId = await UploadFixtureAsync("email.eml");
         await RunTier1Async(jobId);
-        var fake = new FakeChatCompletionService("this is not json at all", CannedAnalysis);
+        var fake = new FakeChatCompletionService("this is not json at all", CannedAnalysis, CannedSynthesis);
 
         var run = await CreateTier2Pipeline(WithFakeChat(fake), out var db).ProcessAsync(jobId);
 
         Assert.Equal(Tier2Outcome.Completed, run.Outcome);
-        Assert.Equal(2, fake.CallCount);
+        Assert.Equal(3, fake.CallCount);
         // The retry carried the corrective instruction.
         Assert.Contains(EmailAnalystPrompts.RetryInstruction, fake.ReceivedLastUserMessages[1]);
         var job = await db.AnalysisJobs.SingleAsync(j => j.Id == jobId);
-        Assert.Equal("tier2.synthesis_pending", job.CurrentStep);
+        Assert.Equal("done", job.CurrentStep);
     }
 
     [Fact]
@@ -183,14 +204,14 @@ public class Tier2PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
     {
         var jobId = await UploadFixtureAsync("email.eml");
         await RunTier1Async(jobId);
-        var fake = new FakeChatCompletionService(CannedAnalysis);
+        var fake = new FakeChatCompletionService(CannedAnalysis, CannedSynthesis);
 
         var first = await CreateTier2Pipeline(WithFakeChat(fake), out _).ProcessAsync(jobId);
         var second = await CreateTier2Pipeline(WithFakeChat(fake), out _).ProcessAsync(jobId);
 
         Assert.Equal(Tier2Outcome.Completed, first.Outcome);
         Assert.Equal(Tier2Outcome.NotPending, second.Outcome);
-        Assert.Equal(1, fake.CallCount);
+        Assert.Equal(2, fake.CallCount);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
@@ -222,6 +243,7 @@ public class Tier2PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
             provider,
             new EmailAnalystStage(provider, NullLogger<EmailAnalystStage>.Instance),
             new ThreatIntelStage(db, intel, NullLogger<ThreatIntelStage>.Instance),
+            new SynthesisStage(db, provider, NullLogger<SynthesisStage>.Instance),
             NullLogger<Tier2Pipeline>.Instance);
     }
 

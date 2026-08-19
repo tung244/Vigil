@@ -124,6 +124,7 @@ public static class DependencyInjection
 
         services.AddScoped<EmailAnalystStage>();
         services.AddScoped<ThreatIntelStage>();
+        services.AddScoped<SynthesisStage>();
         services.AddScoped<Tier2Pipeline>();
 
         return services;

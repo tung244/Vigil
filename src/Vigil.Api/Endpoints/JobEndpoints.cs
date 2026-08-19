@@ -24,6 +24,7 @@ public static class JobEndpoints
 
         group.MapPost("/", UploadArtifact).DisableAntiforgery();
         group.MapGet("/{id:guid}", GetJob);
+        group.MapGet("/{id:guid}/report", GetReport);
         group.MapGet("/", ListJobs);
 
         return app;
@@ -91,9 +92,37 @@ public static class JobEndpoints
         var job = await db.AnalysisJobs.AsNoTracking()
             .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
 
-        return job is null
-            ? Results.NotFound(new { error = $"Job {id} not found." })
-            : Results.Ok(JobSummary.From(job));
+        if (job is null)
+        {
+            return Results.NotFound(new { error = $"Job {id} not found." });
+        }
+
+        var hasReport = await db.Reports.AnyAsync(r => r.JobId == id, cancellationToken);
+        return Results.Ok(JobSummary.From(job, hasReport));
+    }
+
+    private static async Task<IResult> GetReport(Guid id, VigilDbContext db, CancellationToken cancellationToken)
+    {
+        var job = await db.AnalysisJobs.AsNoTracking()
+            .Include(j => j.Report)
+            .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+
+        if (job is null)
+        {
+            return Results.NotFound(new { error = $"Job {id} not found." });
+        }
+
+        if (job.Report is null)
+        {
+            return Results.Conflict(new
+            {
+                error = job.Status == JobStatus.Failed
+                    ? $"Job {id} failed and has no report: {job.ErrorMessage}"
+                    : $"Job {id} has no report yet (status {job.Status}, step {job.CurrentStep})."
+            });
+        }
+
+        return Results.Ok(ReportResponse.From(job.Report));
     }
 
     private static async Task<IResult> ListJobs(
@@ -112,7 +141,14 @@ public static class JobEndpoints
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
+        var jobIds = items.Select(j => j.Id).ToList();
+        var jobsWithReport = await db.Reports
+            .Where(r => jobIds.Contains(r.JobId))
+            .Select(r => r.JobId)
+            .ToHashSetAsync(cancellationToken);
+
         return Results.Ok(new JobListResponse(
-            items.Select(JobSummary.From).ToList(), total, page, pageSize));
+            items.Select(j => JobSummary.From(j, jobsWithReport.Contains(j.Id))).ToList(),
+            total, page, pageSize));
     }
 }
