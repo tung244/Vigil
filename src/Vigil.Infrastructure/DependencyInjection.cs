@@ -3,11 +3,14 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Polly;
 using Vigil.Core.Messaging;
 using Vigil.Core.Ml;
+using Vigil.Core.ThreatIntel;
 using Vigil.Infrastructure.Messaging;
 using Vigil.Infrastructure.Ml;
 using Vigil.Infrastructure.Persistence;
+using Vigil.Infrastructure.ThreatIntel;
 
 namespace Vigil.Infrastructure;
 
@@ -61,6 +64,40 @@ public static class DependencyInjection
                 modelPath, vocabPath, threshold, enabled,
                 sp.GetRequiredService<ILogger<PhishingClassifier>>());
         });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the threat intel clients (VirusTotal v3, AbuseIPDB v2) with a
+    /// 10s timeout and 2 retries on transient HTTP errors, plus the cache-first
+    /// <see cref="IThreatIntelService"/>. Config section "ThreatIntel":
+    /// VirusTotalApiKey, AbuseIpDbApiKey (empty = heuristic fallback),
+    /// CacheHours (default 24).
+    /// </summary>
+    public static IServiceCollection AddVigilThreatIntel(
+        this IServiceCollection services, IConfiguration configuration)
+    {
+        var options = new ThreatIntelOptions
+        {
+            VirusTotalApiKey = configuration["ThreatIntel:VirusTotalApiKey"] ?? "",
+            AbuseIpDbApiKey = configuration["ThreatIntel:AbuseIpDbApiKey"] ?? "",
+            CacheHours = int.TryParse(
+                configuration["ThreatIntel:CacheHours"], CultureInfo.InvariantCulture, out var h) && h > 0
+                ? h
+                : 24
+        };
+        services.AddSingleton(options);
+
+        services.AddHttpClient<VirusTotalClient>(client => client.Timeout = TimeSpan.FromSeconds(10))
+            .AddTransientHttpErrorPolicy(policy => policy.WaitAndRetryAsync(
+                2, attempt => TimeSpan.FromMilliseconds(250 * attempt)));
+
+        services.AddHttpClient<AbuseIpDbClient>(client => client.Timeout = TimeSpan.FromSeconds(10))
+            .AddTransientHttpErrorPolicy(policy => policy.WaitAndRetryAsync(
+                2, attempt => TimeSpan.FromMilliseconds(250 * attempt)));
+
+        services.AddScoped<IThreatIntelService, ThreatIntelService>();
 
         return services;
     }
