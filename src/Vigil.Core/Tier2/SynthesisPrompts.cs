@@ -74,12 +74,55 @@ public static class SynthesisPrompts
         """;
 
     /// <summary>Builds the user message: the whole evidence bundle as JSON.</summary>
-    public static string BuildUserPrompt(string evidenceJson) => $"""
-        Synthesize the final incident report for this job.
+    public static string BuildUserPrompt(string evidenceJson) => BuildUserPrompt(evidenceJson, []);
 
-        Evidence bundle (all fields are observed data; reason only about these):
-        {evidenceJson}
+    /// <summary>
+    /// Builds the user message: the evidence bundle as JSON plus, when present,
+    /// a RAG section with similar past incidents
+    /// (<see cref="BuildSimilarIncidentsSection"/>).
+    /// </summary>
+    public static string BuildUserPrompt(string evidenceJson, IReadOnlyList<SimilarIncidentEvidence> similarIncidents)
+    {
+        var similarSection = BuildSimilarIncidentsSection(similarIncidents);
+        return $"""
+            Synthesize the final incident report for this job.
 
-        Provide the report as the JSON object described in the system instructions.
-        """;
+            Evidence bundle (all fields are observed data; reason only about these):
+            {evidenceJson}
+            {(similarSection.Length == 0 ? string.Empty : "\n" + similarSection + "\n")}
+            Provide the report as the JSON object described in the system instructions.
+            """;
+    }
+
+    /// <summary>
+    /// Renders similar past incidents (pgvector RAG) as a short markdown
+    /// section for the synthesis prompt: risk score, severity, top matched
+    /// rules and the (already truncated) summary excerpt per incident.
+    /// Returns an empty string when there is nothing to show.
+    /// </summary>
+    public static string BuildSimilarIncidentsSection(IReadOnlyList<SimilarIncidentEvidence> similarIncidents)
+    {
+        if (similarIncidents.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder();
+        builder.AppendLine("""
+            Similar past incidents (retrieved by embedding similarity — background
+            context only; never present their conclusions as observed facts of THIS job):
+            """);
+        foreach (var incident in similarIncidents)
+        {
+            var rules = incident.MatchedRules.Count == 0
+                ? "none"
+                : string.Join(", ", incident.MatchedRules.Take(5));
+            builder.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"""
+                - risk {incident.RiskScore:F1} ({incident.Severity}), similarity {incident.Similarity:F2}, rules: {rules}
+                  summary: {incident.SummaryExcerpt}
+                """);
+        }
+
+        return builder.ToString().TrimEnd();
+    }
 }

@@ -31,7 +31,8 @@ namespace Vigil.Infrastructure.Tier2;
 public sealed class SynthesisStage(
     VigilDbContext db,
     LlmKernelProvider llm,
-    ILogger<SynthesisStage> logger)
+    ILogger<SynthesisStage> logger,
+    IncidentSimilarityService? similarity = null)
 {
     private const int MaxAttempts = 2;
     private const int MaxCloudtrailEvents = 20;
@@ -59,7 +60,8 @@ public sealed class SynthesisStage(
         var chat = llm.Kernel!.Services.GetRequiredService<IChatCompletionService>();
 
         var history = new ChatHistory(SynthesisPrompts.SystemPrompt);
-        history.AddUserMessage(SynthesisPrompts.BuildUserPrompt(JsonSerializer.Serialize(evidence, JsonOptions)));
+        history.AddUserMessage(SynthesisPrompts.BuildUserPrompt(
+            JsonSerializer.Serialize(evidence, JsonOptions), evidence.SimilarIncidents));
 
         for (var attempt = 1; attempt <= MaxAttempts; attempt++)
         {
@@ -122,6 +124,20 @@ public sealed class SynthesisStage(
                 .Take(MaxCloudtrailEvents)
                 .ToListAsync(cancellationToken);
 
+        // RAG: retrieve similar past incidents by embedding similarity before the
+        // LLM sees the bundle. Silent no-op when embeddings are disabled/unavailable.
+        IReadOnlyList<SimilarIncidentEvidence> similarIncidents = [];
+        if (similarity is not null)
+        {
+            var queryText = IncidentSimilarityService.BuildRetrievalQuery(
+                ruleData?.MatchedRules ?? [],
+                iocs.Select(i => i.Value).ToList(),
+                emailAnalysis?.Summary);
+            similarIncidents = string.IsNullOrWhiteSpace(queryText)
+                ? []
+                : await similarity.FindSimilarAsync(queryText, job.Id, cancellationToken: cancellationToken);
+        }
+
         return new SynthesisEvidence
         {
             FileName = job.FileName,
@@ -141,7 +157,8 @@ public sealed class SynthesisStage(
             CloudtrailEvents = cloudtrailEvents
                 .Select(e => new CloudtrailEvidence(
                     e.EventTime, e.EventName, e.SourceIp, e.UserIdentity, e.AwsRegion))
-                .ToList()
+                .ToList(),
+            SimilarIncidents = similarIncidents
         };
     }
 }

@@ -67,6 +67,23 @@ public static class DependencyInjection
                 sp.GetRequiredService<ILogger<PhishingClassifier>>());
         });
 
+        // Sentence-transformers/all-MiniLM-L6-v2 (ONNX) for incident similarity
+        // (Step 9 RAG). MiniLM shares the bert-base-uncased vocab with the
+        // phishing model, so VocabPath defaults to the same models/vocab.txt.
+        // A missing model file degrades to "RAG skipped" with one warning.
+        services.AddSingleton<IEmbeddingService>(sp =>
+        {
+            var enabled = !bool.TryParse(configuration["Ml:EmbeddingEnabled"], out var e) || e;
+            var modelPath = ResolvePath(
+                configuration["Ml:EmbeddingModelPath"] ?? "models/minilm.onnx", contentRootPath);
+            var vocabPath = ResolvePath(
+                configuration["Ml:EmbeddingVocabPath"] ?? "models/vocab.txt", contentRootPath);
+
+            return new OnnxEmbeddingService(
+                modelPath, vocabPath, enabled,
+                sp.GetRequiredService<ILogger<OnnxEmbeddingService>>());
+        });
+
         return services;
     }
 
@@ -122,6 +139,7 @@ public static class DependencyInjection
         });
         services.AddSingleton<LlmKernelProvider>();
 
+        services.AddScoped<IncidentSimilarityService>();
         services.AddScoped<EmailAnalystStage>();
         services.AddScoped<ThreatIntelStage>();
         services.AddScoped<SynthesisStage>();

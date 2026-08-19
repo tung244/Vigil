@@ -51,7 +51,8 @@ public sealed class Tier2Pipeline(
     EmailAnalystStage emailAnalyst,
     ThreatIntelStage threatIntelStage,
     SynthesisStage synthesisStage,
-    ILogger<Tier2Pipeline> logger)
+    ILogger<Tier2Pipeline> logger,
+    IncidentSimilarityService? similarity = null)
 {
     private static readonly JsonSerializerOptions ReportJsonOptions = new()
     {
@@ -140,6 +141,17 @@ public sealed class Tier2Pipeline(
 
             var synthesis = await synthesisStage.SynthesizeAsync(job, analysis, cancellationToken);
             PersistReport(job, synthesis);
+
+            // Index the report's embedding for future similarity retrieval (RAG);
+            // silently skipped when embeddings are disabled/unavailable.
+            if (similarity is not null)
+            {
+                var iocValues = await db.Iocs.AsNoTracking()
+                    .Where(i => i.JobId == job.Id)
+                    .Select(i => i.Value)
+                    .ToListAsync(cancellationToken);
+                await similarity.IndexReportAsync(job.Report!, iocValues, cancellationToken);
+            }
 
             job.Status = JobStatus.Done;
             job.CurrentStep = "done";

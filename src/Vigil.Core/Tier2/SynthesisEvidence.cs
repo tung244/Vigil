@@ -19,6 +19,19 @@ public sealed record CloudtrailEvidence(
     string? AwsRegion);
 
 /// <summary>
+/// One past incident retrieved by pgvector embedding similarity (RAG context
+/// for the synthesis prompt). <see cref="SummaryExcerpt"/> is already
+/// truncated; <see cref="Similarity"/> is cosine similarity in [0, 1].
+/// </summary>
+public sealed record SimilarIncidentEvidence(
+    Guid ReportId,
+    double RiskScore,
+    string Severity,
+    IReadOnlyList<string> MatchedRules,
+    string SummaryExcerpt,
+    double Similarity);
+
+/// <summary>
 /// The complete evidence bundle for one job, gathered from the database before
 /// synthesis. This is the only input the synthesis prompt (and the
 /// deterministic fallback) may reason about — the "evidence discipline" port
@@ -49,4 +62,13 @@ public sealed record SynthesisEvidence
 
     /// <summary>CloudTrail events whose source IP matches an IOC; empty when there is no correlation.</summary>
     public required IReadOnlyList<CloudtrailEvidence> CloudtrailEvents { get; init; }
+
+    /// <summary>
+    /// Past incidents retrieved by pgvector embedding similarity; empty when
+    /// embeddings are disabled or nothing similar exists. Not serialized into
+    /// the evidence JSON — the prompt renders it via
+    /// <see cref="SynthesisPrompts.BuildSimilarIncidentsSection"/> instead.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<SimilarIncidentEvidence> SimilarIncidents { get; init; } = [];
 }
