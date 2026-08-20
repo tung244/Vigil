@@ -110,6 +110,50 @@ GET /api/stats/mitre         ▼
 - Tay: chạy full stack, vào trang **Metrics** → bảng Alerts có badge màu,
   sort/filter được; heatmap hiện ô technique; click một dòng alert → flyout 3 tab.
 
+### Phase 2 — Redesign trang chủ SOCDashboard (W7-W8)
+
+Phase 1 chỉ đụng trang Metrics nên trang chủ nhìn "không khác gì". Phase 2
+redesign chính SOCDashboard thành layout kiểu OpenSearch Dashboards:
+
+**W7 — Layout mới** (commit `f577953`)
+
+- `frontend/src/services/api.ts` — thêm `fetchStatsApi()` gọi `GET /api/stats`
+  (KPI server-side; khác với adapter `fetchStats` cũ tính client-side).
+- `frontend/src/pages/SOCDashboard.tsx` — rewrite layout (giữ nguyên logic cũ):
+  - **KPI strip** trên cùng: Total Alerts / Critical+High / Avg Risk / Jobs 24h,
+    refresh 5s.
+  - **Live alert feed làm trung tâm** (grid col-8): danh sách job mới nhất,
+    dòng dense (`py-1.5`, `text-xs`): StatusBadge, SeverityBadge, filename mono,
+    risk score, time. Auto-refresh 5s. Click dòng → mở flyout.
+  - **Cột phải (col-4)**: panel Submit Evidence (upload compact, vẫn drag&drop)
+    + Autonomous Agents + SOC Readiness.
+  - Pipeline graph và Reasoning Trace chuyển thành **panel collapsible** bên
+    dưới — giữ đủ chức năng nhưng xuống vai phụ (SOC thật nhìn alert trước,
+    graph sau).
+  - Toàn bộ khu vực bọc trong panel viền mảnh (`border-slate-800`), header
+    panel uppercase tracking-wide — đúng chất panel grid của OpenSearch.
+
+**W8 — Flyout dùng chung** (commit `8593458`)
+
+- `frontend/src/components/ReportFlyout.tsx` (mới) — tách flyout 3 tab từ
+  Metrics.tsx ra component dùng chung; tự fetch detail qua `fetchReportDetail`.
+  Thêm 2 state cho job chưa xong: "Pipeline in progress" (hiện `currentStep`)
+  và "Pipeline failed" (hiện step + errorMessage).
+- Metrics.tsx bỏ ~340 dòng flyout inline, import component chung.
+- SOCDashboard: click alert feed → mở cùng ReportFlyout đó.
+
+Layout trang chủ sau redesign:
+
+```text
+Header
+├─ KPI strip: Total Alerts | Critical+High | Avg Risk | Jobs 24h
+├─ Grid 12 cột:
+│   ├─ col-8: LIVE ALERT FEED (click row → flyout)
+│   └─ col-4: Submit Evidence + Autonomous Agents + SOC Readiness
+├─ LIVE AGENT PIPELINE (collapsible)
+└─ AUTONOMOUS REASONING TRACE (collapsible)
+```
+
 ### Ghi chú / Giới hạn
 
 - **Bỏ tính năng click-ô-heatmap-để-filter-bảng**: vì dòng alert lấy từ
@@ -124,6 +168,7 @@ GET /api/stats/mitre         ▼
 ### Commits
 
 `db0eee2` (W1) · `aab32dd` (W2) · `57e226d` (W3) · `fea07e0` (W4) · `db2bbb3` (W5)
+· `89dc48c` (W6 docs) · `f577953` (W7) · `8593458` (W8)
 
 ---
 
