@@ -11,7 +11,12 @@ const string devCorsPolicy = "ViteDev";
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(devCorsPolicy, policy =>
-        policy.WithOrigins("http://localhost:5173")
+        policy.SetIsOriginAllowed(origin =>
+                {
+                    // Any localhost port — Vite moves to 5174+ when 5173 is busy.
+                    return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+                        && uri.Host is "localhost" or "127.0.0.1";
+                })
             .AllowAnyHeader()
             .AllowAnyMethod());
 });

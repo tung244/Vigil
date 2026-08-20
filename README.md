@@ -121,11 +121,20 @@ npm run dev
 The dashboard reads the API base URL from `VITE_API_BASE_URL` (see
 `frontend/.env.example`); it defaults to `http://localhost:5027`.
 
-**Optional keys** (Worker config / user-secrets): `Llm:ApiKey` (Gemini),
-`ThreatIntel:VirusTotalApiKey`, `ThreatIntel:AbuseIpDbApiKey`. All three are
-optional — missing keys trigger the documented fallbacks, not crashes. Note:
-without a Gemini key, `.eml` jobs stop at `tier2.email_analysis` by design,
-while `.csv`/`.json` jobs complete end-to-end.
+**Optional keys**: `Llm:ApiKey` (Gemini), `ThreatIntel:VirusTotalApiKey`,
+`ThreatIntel:AbuseIpDbApiKey`. All three are optional — missing keys trigger the
+documented fallbacks, not crashes. Note: without a Gemini key, `.eml` jobs stop
+at `tier2.email_analysis` by design, while `.csv`/`.json` jobs complete
+end-to-end.
+
+**Do not put keys in `appsettings.json`** (it is committed). Use user-secrets:
+
+```bash
+cd src/Vigil.Worker
+dotnet user-secrets set "Llm:ApiKey" "<your-gemini-key>"
+dotnet user-secrets set "ThreatIntel:VirusTotalApiKey" "<your-vt-key>"
+dotnet user-secrets set "ThreatIntel:AbuseIpDbApiKey" "<your-abuseipdb-key>"
+```
 
 **ONNX models** (`models/phishing.onnx`, `models/minilm.onnx`) are gitignored
 (~1.25 GB). Regenerate them with `tools/export_onnx.py`; without them, ML
