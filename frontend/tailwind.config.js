@@ -10,10 +10,19 @@ export default {
       colors: {
         "primary": "#ec5b13",
         "background-light": "#f8f6f6",
-        "background-dark": "#221610",
+        // Wazuh-style deep navy-charcoal (dark-first default)
+        "background-dark": "#0b0f19",
+        "surface-dark": "#111827",
+        // SOC severity scale
+        "severity-critical": "#ef4444",
+        "severity-high": "#f97316",
+        "severity-medium": "#eab308",
+        "severity-low": "#38bdf8",
       },
       fontFamily: {
-        "display": ["Public Sans", "sans-serif"]
+        "display": ["Public Sans", "sans-serif"],
+        // Monospace stack for IOCs, IPs, hashes, report IDs
+        "mono": ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", "monospace"]
       },
       borderRadius: {
         "DEFAULT": "0.25rem",
