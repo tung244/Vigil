@@ -1,7 +1,7 @@
 # Vigil — Nhật ký nâng cấp (UPGRADES)
 
 > File này ghi lại **chi tiết** các đợt nâng cấp sau v1, để khi quay lại project sau
-> một thờian gian vẫn đọc và hiểu được: đợt đó làm gì, tại sao làm, hoạt động ra
+> một thời gian, đọc lại vẫn hiểu được: đợt đó làm gì, tại sao làm, hoạt động ra
 > sao, và code nằm ở file nào.
 >
 > Quy ước: mỗi đợt nâng cấp là một mục lớn (Món 1, 2, 3...). Mỗi mục có: Mục tiêu,
@@ -172,11 +172,144 @@ Header
 
 ---
 
-## Món 1 — OWASP hardening (chưa làm)
+## Món 1 — OWASP hardening (hoàn thành)
 
-Kế hoạch: JWT auth cho API, rate limiting (upload + read), upload validation
-theo magic bytes, security headers, siết CORS cho production.
-*(Sẽ viết chi tiết vào mục này khi hoàn thành.)*
+### Mục tiêu
+
+Đưa API từ "mở toang cho ai cũng gọi được" lên mức baseline theo OWASP:
+có authentication (JWT), rate limiting chống spam/brute-force, validate nội
+dung file upload thay vì tin extension, security headers trên mọi response, và
+CORS siết lại cho production. Đây là phần "nền" — rẻ effort nhưng là chủ đề
+phỏng vấn backend kinh điển (OWASP Top 10: A01 Broken Access Control,
+A05 Security Misconfiguration, A07 Identification & Authentication Failures).
+
+### Thay đổi chi tiết (commit `4c3aa12`)
+
+**1. JWT auth — login endpoint + bảo vệ toàn bộ API**
+
+- `src/Vigil.Api/Auth/TokenService.cs` (mới) — phát JWT ký HMAC-SHA256.
+  Config đọc từ section `Auth`: `Issuer`, `Audience`, `SigningKey` (bắt buộc
+  ≥ 32 ký tự, thiếu thì throw ngay lúc boot — fail fast), `TokenLifetimeMinutes`
+  (mặc định 720 = 12h). `BuildValidationParameters()` cho middleware validate:
+  issuer + audience + signing key + lifetime, clock skew 30s.
+- `src/Vigil.Api/Endpoints/AuthEndpoints.cs` (mới) — `POST /api/auth/login`
+  nhận `{username, password}`, so với `Auth:AdminUser`/`Auth:AdminPassword`
+  trong config, đúng thì trả `{token, expiresInMinutes}`. Endpoint này
+  **anonymous** (hiển nhiên) nhưng có rate limit riêng (xem mục 2).
+- `JobEndpoints.cs` + `StatsEndpoints.cs` — thêm `.RequireAuthorization()` lên
+  cả group `/api/jobs` và `/api/stats`. Chỉ `/health` và `/api/auth/login`
+  còn mở.
+- Hệ thống single-user (một SOC operator) — credentials nằm trong config, chưa
+  cần bảng Users trong DB. Đủ cho quy mô portfolio/demo; multi-user là chuyện
+  khác.
+- Credential/signing key thật đi vào `appsettings.Development.Local.json`
+  (đã gitignore) hoặc biến môi trường `Auth__SigningKey`... — **không bao giờ**
+  commit key thật. `appsettings.Development.json` chỉ chứa dev key rõ ràng ghi
+  "change-me". Program.cs giờ cũng load thêm file Local (trước chỉ Worker load).
+
+**2. Rate limiting** (`AddRateLimiter` built-in của .NET 9, trong `Program.cs`)
+
+- 2 policy named (`src/Vigil.Api/Security/RateLimitPolicies.cs`):
+  - `uploads` → gắn lên `POST /api/jobs`: fixed window **10 req/phút/IP**
+    (config `RateLimiting:UploadPermitLimit`).
+  - `auth` → gắn lên `POST /api/auth/login`: **5 req/phút/IP** — chống
+    brute-force password (config `RateLimiting:AuthPermitLimit`).
+- Partition theo `RemoteIpAddress`; vượt limit trả **429 Too Many Requests**
+  (`RejectionStatusCode`), không queue (`QueueLimit = 0`).
+- **Gotcha đã gặp và sửa:** limit phải đọc từ `IConfiguration` *live* trong
+  lambda (qua `httpContext.RequestServices`), không capture lúc startup — vì
+  `WebApplicationFactory` của integration test inject config override *sau* khi
+  top-level code của `Program.cs` đã chạy, nên giá trị capture sớm sẽ là default
+  (5 req/phút) và test bị 429 hàng loạt.
+
+**3. Upload magic-byte validation** (`src/Vigil.Api/Security/UploadFileValidator.cs`, mới)
+
+- Trước đây chỉ check extension (`.eml/.csv/.json`) — đổi tên `malware.exe`
+  thành `report.eml` là qua. Giờ sniff 4KB đầu file:
+  - Reject signature nguy hiểm: `MZ` (Windows PE), `ELF`, `PK\x03\x04` (zip),
+    Mach-O, `%PDF`.
+  - Reject file có NUL byte (= binary, không phải text artifact).
+  - `.json`: ký tự non-whitespace đầu tiên phải là `{` hoặc `[`.
+  - `.eml`: dòng đầu phải có dạng header RFC 822 (`Name: value`).
+- Chạy trong `UploadArtifact` sau khi check extension, trước khi ghi đĩa.
+
+**4. Security headers** (middleware trong `Program.cs`, mọi response)
+
+- `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer`,
+  `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`
+  (đây là JSON API, browser không cần load resource nào).
+- Tắt `Server: Kestrel` header (`ConfigureKestrel(o => o.AddServerHeader = false)`).
+
+**5. CORS siết cho production**
+
+- Dev giữ nguyên: mọi origin localhost (Vite nhảy port 5173→5174).
+- Non-dev: chỉ các origin trong `Cors:AllowedOrigins` (config array, mặc định
+  rỗng = không cho cross-origin nào).
+
+**6. Frontend login**
+
+- `frontend/src/pages/Login.tsx` (mới) — form login dark theme, gọi
+  `POST /api/auth/login`, lưu token vào `localStorage` (`vigil_token`).
+- `frontend/src/services/api.ts` — thêm `login/getToken/clearToken/isAuthenticated`
+  và wrapper `authFetch`: tự gắn `Authorization: Bearer <token>` vào mọi call;
+  gặp 401 → xoá token + redirect `/login`. Tất cả call site (`fetchJobs`,
+  `fetchJobReport`, `uploadFile`, `fetchMitreStats`...) chuyển sang `authFetch`.
+- `frontend/src/App.tsx` — guard `RequireAuth`: chưa có token thì mọi route
+  (trừ `/login`) redirect về `/login`.
+
+**7. Tests**
+
+- `tests/Vigil.IntegrationTests/VigilApiFactory.cs` — inject config test
+  (signing key + user/pass test + rate limit nâng lên 100000), thêm helper
+  `CreateAuthenticatedClientAsync()`: login thật qua endpoint rồi trả client đã
+  gắn Bearer token. Toàn bộ test cũ (9 call site, 6 file) đổi sang helper này.
+- `tests/Vigil.IntegrationTests/ApiSecurityTests.cs` (mới, 8 test):
+  anonymous bị 401 trên 3 endpoint · `/health` vẫn mở · login sai pass → 401 ·
+  login đúng → gọi được `/api/stats` · upload file nội dung MZ → 400 ·
+  upload `.json` nội dung không phải JSON → 400 · security headers hiện diện.
+
+### Cách hoạt động (luồng một request)
+
+```
+browser → (chưa login) → /login → POST /api/auth/login [rate limit 5/phút]
+        → đúng pass → JWT (12h) lưu localStorage
+browser → GET /api/jobs + header Authorization: Bearer <jwt>
+        → rate limiter (nếu là POST upload) → JWT middleware validate chữ ký
+        + hạn → endpoint chạy → response kèm security headers
+Token hết hạn/sai → 401 → frontend tự xoá token + về /login
+```
+
+### Cách kiểm chứng
+
+- `dotnet test tests/Vigil.UnitTests -c Release` → 181 xanh.
+- `dotnet test tests/Vigil.IntegrationTests -c Release` → 42/43 xanh; test
+  `Upload_eml_accepts_persists_and_queues_job` fail **vì lý do môi trường**:
+  Worker thật đang chạy ngoài sẽ consume message test trong queue `vigil.jobs`
+  (bản thân comment trong test đã ghi "the Worker is not running here"). Tắt
+  Worker rồi chạy lại là xanh. Không liên quan thay đổi của món này.
+- `cd frontend && npm run build` → xanh. (3 eslint error `no-explicit-any`
+  trong `api.ts` là có sẵn từ trước, không phải của món này.)
+- Test tay: `curl -X POST localhost:5027/api/auth/login -H 'Content-Type: application/json'
+  -d '{"username":"admin","password":"vigil-dev"}'` → lấy token; gọi
+  `/api/jobs` không token → 401, có token → 200.
+
+### Ghi chú / Giới hạn
+
+- **Single-user**: chưa có bảng Users, đổi password = sửa config + restart API.
+- JWT không có refresh token / revoke list — token 12h tự hết hạn. Muốn revoke
+  ngay thì đổi `Auth:SigningKey` (mọi token cũ chết).
+- Rate limit là in-memory per-instance: scale nhiều instance API thì limit không
+  chia sẻ (cần Redis/backplane — chưa làm).
+- Magic-byte check chặn executable giả mạo, nhưng không phải antivirus — file
+  text độc hại (vd CSV có công thức macro) vẫn qua; pipeline xử lý file là
+  read-only nên rủi ro thấp.
+- `Content-Security-Policy: default-src 'none'` áp cho API; frontend là app
+  riêng (Vite serve) nên không bị ảnh hưởng.
+
+### Commits
+
+`4c3aa12` — toàn bộ món 1 (backend + frontend + tests)
 
 ## Món 3 — Sigma rule pack cho Tier 1 (chưa làm)
 
