@@ -352,6 +352,29 @@ export const fetchMitreStats = async (): Promise<MitreStats | null> => {
   }
 };
 
+// ─── /api/stats (server-computed) ───────────────────────────────────────────
+
+export interface ApiStats {
+  totalJobs: number;
+  totalReports: number;
+  jobsByStatus: { queued: number; filtering: number; analyzing: number; done: number; failed: number };
+  reportsBySeverity: { low: number; medium: number; high: number; critical: number };
+  avgRiskScore: number; // 0–10
+  last24hJobs: number;
+}
+
+/** Server-side aggregated stats for the dashboard KPI strip. */
+export const fetchStatsApi = async (): Promise<ApiStats | null> => {
+  try {
+    const res = await fetch(`${API_BASE}/api/stats`);
+    if (!res.ok) throw new Error(`GET /api/stats failed: ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    console.error('API fetch error:', error);
+    return null;
+  }
+};
+
 /** Aggregated stats for the Metrics page, computed from jobs + reports. */
 export const fetchStats = async (): Promise<any> => {
   const { items, total } = await fetchJobs(1, 100);
