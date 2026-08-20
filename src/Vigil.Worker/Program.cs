@@ -4,6 +4,10 @@ using Vigil.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// Local-only overrides (API keys, personal settings). This file is gitignored
+// (appsettings.*.Local.json), so secrets never enter git history.
+builder.Configuration.AddJsonFile("appsettings.Development.Local.json", optional: true, reloadOnChange: true);
+
 builder.Services.AddVigilPersistence(builder.Configuration);
 builder.Services.AddVigilMachineLearning(builder.Configuration, builder.Environment.ContentRootPath);
 builder.Services.AddVigilThreatIntel(builder.Configuration);
