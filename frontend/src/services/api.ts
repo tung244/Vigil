@@ -382,6 +382,8 @@ export const fetchStats = async (): Promise<any> => {
         event_type: j.fileType === 'eml' ? 'email' : 'cloudtrail',
         status: toViewStatus(j.status),
         risk_score: (pair?.report?.riskScore ?? 0) / 10,
+        severity: pair?.report?.severity ?? null,
+        created_at: j.createdAt,
         finding_count: findings.length,
         findings,
       };

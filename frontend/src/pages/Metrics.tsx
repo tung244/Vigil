@@ -2,7 +2,29 @@ import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Header } from '../components/Header';
+import { SeverityBadge, StatusBadge, Mono, normalizeSeverity, severityFromRisk } from '../components/badges';
 import { fetchStats, fetchReportDetail } from '../services/api';
+
+type Verdict = 'MALICIOUS' | 'SUSPICIOUS' | 'SAFE';
+
+const verdictOf = (r: any): Verdict => {
+  const score = r.risk_score * 100;
+  const hasCritical = r.findings?.some?.((f: any) => f.severity === 'CRITICAL' || f.severity === 'HIGH');
+  let verdict: Verdict = score > 70 ? 'MALICIOUS' : score > 40 ? 'SUSPICIOUS' : 'SAFE';
+  if (verdict === 'SAFE' && hasCritical) verdict = 'SUSPICIOUS';
+  return verdict;
+};
+
+const VERDICT_CLASSES: Record<Verdict, string> = {
+  MALICIOUS: 'bg-red-500/15 text-red-400 border-red-500/40',
+  SUSPICIOUS: 'bg-amber-500/15 text-amber-400 border-amber-500/40',
+  SAFE: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40',
+};
+const VERDICT_ICONS: Record<Verdict, string> = {
+  MALICIOUS: 'gpp_bad',
+  SUSPICIOUS: 'warning',
+  SAFE: 'verified_user',
+};
 
 export default function Metrics() {
   const [stats, setStats] = useState<any>(null);
@@ -12,6 +34,20 @@ export default function Metrics() {
   const [blockToast, setBlockToast] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [sortKey, setSortKey] = useState<'time' | 'risk'>('time');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [sevFilter, setSevFilter] = useState('all');
+  const [verdictFilter, setVerdictFilter] = useState('all');
+
+  const toggleSort = (key: 'time' | 'risk') => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+    setPage(1);
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -272,15 +308,55 @@ export default function Metrics() {
         </div>
 
 
-        {/* Recent Investigations Table */}
+        {/* Alerts Table — dense SOC style */}
+        {(() => {
+          const allReports: any[] = stats.recent_reports || [];
+          const rowSeverity = (r: any) => r.severity ?? severityFromRisk(r.risk_score);
+          const filtered = allReports
+            .filter((r) => sevFilter === 'all' || normalizeSeverity(rowSeverity(r)) === sevFilter)
+            .filter((r) => verdictFilter === 'all' || verdictOf(r) === verdictFilter)
+            .sort((a, b) => {
+              const av = sortKey === 'risk' ? a.risk_score : new Date(a.created_at ?? 0).getTime();
+              const bv = sortKey === 'risk' ? b.risk_score : new Date(b.created_at ?? 0).getTime();
+              return sortDir === 'asc' ? (av > bv ? 1 : av < bv ? -1 : 0) : (av < bv ? 1 : av > bv ? -1 : 0);
+            });
+          const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+          const safePage = Math.min(page, totalPages);
+          const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+          const sortIcon = (key: 'time' | 'risk') =>
+            sortKey !== key ? 'unfold_more' : sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward';
+          const thBtn = 'inline-flex items-center gap-1 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer select-none';
+
+          return (
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
+          <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-wrap justify-between items-center gap-2">
             <h3 className="font-bold text-sm flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-base">history</span>
-              Recent Investigations
+              Alerts — Recent Investigations
             </h3>
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{stats.recent_reports.length} total</span>
+            <div className="flex items-center gap-2">
+              <select
+                value={sevFilter}
+                onChange={(e) => { setSevFilter(e.target.value); setPage(1); }}
+                className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 border-0 rounded-lg px-2 py-1 text-slate-600 dark:text-slate-300 cursor-pointer uppercase"
+              >
+                <option value="all">Severity: All</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+              <select
+                value={verdictFilter}
+                onChange={(e) => { setVerdictFilter(e.target.value); setPage(1); }}
+                className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 border-0 rounded-lg px-2 py-1 text-slate-600 dark:text-slate-300 cursor-pointer uppercase"
+              >
+                <option value="all">Verdict: All</option>
+                <option value="MALICIOUS">Malicious</option>
+                <option value="SUSPICIOUS">Suspicious</option>
+                <option value="SAFE">Safe</option>
+              </select>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{filtered.length} / {allReports.length}</span>
               <select
                 value={pageSize}
                 onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
@@ -293,93 +369,92 @@ export default function Metrics() {
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  <th className="p-3 pl-4">Report ID</th>
-                  <th className="p-3">Type</th>
-                  <th className="p-3">Verdict</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Risk Score</th>
-                  <th className="p-3">Findings</th>
+                  <th className="px-2 py-1.5 pl-3">Report ID</th>
+                  <th className="px-2 py-1.5">Type</th>
+                  <th className="px-2 py-1.5">Severity</th>
+                  <th className="px-2 py-1.5">Verdict</th>
+                  <th className="px-2 py-1.5">Status</th>
+                  <th className="px-2 py-1.5">
+                    <button className={thBtn} onClick={() => toggleSort('risk')}>
+                      Risk Score <span className="material-symbols-outlined text-xs">{sortIcon('risk')}</span>
+                    </button>
+                  </th>
+                  <th className="px-2 py-1.5">Findings</th>
+                  <th className="px-2 py-1.5">
+                    <button className={thBtn} onClick={() => toggleSort('time')}>
+                      Time <span className="material-symbols-outlined text-xs">{sortIcon('time')}</span>
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {(() => {
-                  const allReports = stats.recent_reports || [];
-                  const paged = allReports.slice((page - 1) * pageSize, page * pageSize);
-                  return paged.length > 0 ? paged.map((r: any) => (
-                  <tr key={r.report_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer" onClick={async () => {
+                {paged.length > 0 ? paged.map((r: any) => {
+                  const verdict = verdictOf(r);
+                  return (
+                  <tr key={r.report_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer" onClick={async () => {
                     setSelectedReport(r);
                     setReportDetail(null);
                     setReportDetail(await fetchReportDetail(r.report_id));
                   }}>
-                    <td className="p-3 pl-4 font-mono text-xs font-bold text-primary">{r.report_id}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${r.event_type === 'email' ? 'bg-primary/10 text-primary' : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'}`}>
+                    <td className="px-2 py-1.5 pl-3"><Mono className="font-bold text-primary">{r.report_id}</Mono></td>
+                    <td className="px-2 py-1.5">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${r.event_type === 'email' ? 'bg-primary/10 text-primary' : 'bg-indigo-500/15 text-indigo-500 dark:text-indigo-400'}`}>
                         {r.event_type}
                       </span>
                     </td>
-                    <td className="p-3">
-                      {(() => {
-                        const score = r.risk_score * 100;
-                        const hasCritical = r.findings?.some?.((f: any) => f.severity === 'CRITICAL' || f.severity === 'HIGH');
-                        let verdict = score > 70 ? 'MALICIOUS' : score > 40 ? 'SUSPICIOUS' : 'SAFE';
-                        if (verdict === 'SAFE' && hasCritical) verdict = 'SUSPICIOUS';
-                        const cls = verdict === 'MALICIOUS' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : verdict === 'SUSPICIOUS' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600' : 'bg-green-100 dark:bg-green-900/30 text-green-600';
-                        const icon = verdict === 'MALICIOUS' ? 'gpp_bad' : verdict === 'SUSPICIOUS' ? 'warning' : 'verified_user';
-                        return (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${cls}`}>
-                            <span className="material-symbols-outlined text-xs">{icon}</span>
-                            {verdict}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${r.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30 text-green-600' : r.status === 'failed' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 animate-pulse'}`}>
-                        {r.status}
+                    <td className="px-2 py-1.5"><SeverityBadge severity={rowSeverity(r)} /></td>
+                    <td className="px-2 py-1.5">
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase ${VERDICT_CLASSES[verdict]}`}>
+                        <span className="material-symbols-outlined text-xs">{VERDICT_ICONS[verdict]}</span>
+                        {verdict}
                       </span>
                     </td>
-                    <td className="p-3">
+                    <td className="px-2 py-1.5"><StatusBadge status={r.status} /></td>
+                    <td className="px-2 py-1.5">
                       <div className="flex items-center gap-2">
-                        <div className="w-16 bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div className="w-14 bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
                           <div className={`h-full rounded-full transition-all ${(r.risk_score * 100) > 70 ? 'bg-red-500' : (r.risk_score * 100) > 40 ? 'bg-amber-400' : 'bg-emerald-500'}`} style={{ width: `${Math.min(r.risk_score * 100, 100)}%` }}></div>
                         </div>
-                        <span className="text-xs font-bold">{(r.risk_score * 100).toFixed(0)}%</span>
+                        <span className="text-[11px] font-bold font-mono">{(r.risk_score * 100).toFixed(0)}%</span>
                       </div>
                     </td>
-                    <td className="p-3">
-                      <span className="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-xs font-bold">{r.finding_count}</span>
+                    <td className="px-2 py-1.5">
+                      <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[11px] font-bold font-mono">{r.finding_count}</span>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Mono className="text-slate-400">{r.created_at ? new Date(r.created_at).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '—'}</Mono>
                     </td>
                   </tr>
-                )) : (
-                  <tr><td colSpan={6} className="p-6 text-center text-slate-500 text-sm">No investigations yet. Trigger an analysis to see data here.</td></tr>
-                );
-                })()}
+                  );
+                }) : (
+                  <tr><td colSpan={8} className="p-6 text-center text-slate-500 text-sm">No investigations match the current filters.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
           {/* Pagination Controls */}
-          {stats.recent_reports.length > 0 && (
-            <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
+          {filtered.length > 0 && (
+            <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
               <span className="text-[10px] font-bold text-slate-400">
-                Showing {Math.min((page - 1) * pageSize + 1, stats.recent_reports.length)}–{Math.min(page * pageSize, stats.recent_reports.length)} of {stats.recent_reports.length}
+                Showing {Math.min((safePage - 1) * pageSize + 1, filtered.length)}–{Math.min(safePage * pageSize, filtered.length)} of {filtered.length}
               </span>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page <= 1}
+                  disabled={safePage <= 1}
                   className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
                 >
                   <span className="material-symbols-outlined text-xs">chevron_left</span> Prev
                 </button>
                 <span className="px-3 py-1 text-[10px] font-black text-primary">
-                  {page} / {Math.ceil(stats.recent_reports.length / pageSize) || 1}
+                  {safePage} / {totalPages}
                 </span>
                 <button
-                  onClick={() => setPage(p => Math.min(Math.ceil(stats.recent_reports.length / pageSize), p + 1))}
-                  disabled={page >= Math.ceil(stats.recent_reports.length / pageSize)}
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
                   className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
                 >
                   Next <span className="material-symbols-outlined text-xs">chevron_right</span>
@@ -388,6 +463,8 @@ export default function Metrics() {
             </div>
           )}
         </div>
+          );
+        })()}
 
         {/* Report Detail Drawer */}
         {selectedReport && (
