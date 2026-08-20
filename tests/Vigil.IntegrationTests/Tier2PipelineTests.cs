@@ -249,7 +249,7 @@ public class Tier2PipelineTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
 
     private async Task<Guid> UploadFixtureAsync(string fixtureName)
     {
-        var client = _factory.CreateClient();
+        var client = await _factory.CreateAuthenticatedClientAsync();
 
         var fixturePath = Path.Combine(AppContext.BaseDirectory, "fixtures", fixtureName);
         await using var fileStream = File.OpenRead(fixturePath);

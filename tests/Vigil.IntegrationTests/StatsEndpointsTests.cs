@@ -35,7 +35,7 @@ public class StatsEndpointsTests : IClassFixture<VigilApiFactory>, IAsyncLifetim
     [Fact]
     public async Task GetStats_returns_kpi_shape_and_counts_covering_seeded_rows()
     {
-        var client = _factory.CreateClient();
+        var client = await _factory.CreateAuthenticatedClientAsync();
         var seeded = await SeedAsync();
 
         var response = await client.GetAsync("/api/stats");
@@ -100,7 +100,7 @@ public class StatsEndpointsTests : IClassFixture<VigilApiFactory>, IAsyncLifetim
     [Fact]
     public async Task GetMitreHeatmap_aggregates_techniques_and_tactics()
     {
-        var client = _factory.CreateClient();
+        var client = await _factory.CreateAuthenticatedClientAsync();
         await SeedAsync();
 
         var response = await client.GetAsync("/api/stats/mitre");

@@ -10,7 +10,7 @@ public static class StatsEndpoints
 {
     public static IEndpointRouteBuilder MapStatsEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/stats").WithTags("Stats");
+        var group = app.MapGroup("/api/stats").WithTags("Stats").RequireAuthorization();
 
         group.MapGet("/", GetStats);
         group.MapGet("/mitre", GetMitreHeatmap);

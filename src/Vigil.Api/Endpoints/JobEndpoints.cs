@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Vigil.Api.Contracts;
+using Vigil.Api.Security;
 using Vigil.Core.Domain;
 using Vigil.Core.Messaging;
 using Vigil.Infrastructure.Persistence;
@@ -20,9 +21,11 @@ public static class JobEndpoints
 
     public static IEndpointRouteBuilder MapJobEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/jobs").WithTags("Jobs");
+        var group = app.MapGroup("/api/jobs").WithTags("Jobs").RequireAuthorization();
 
-        group.MapPost("/", UploadArtifact).DisableAntiforgery();
+        group.MapPost("/", UploadArtifact)
+            .DisableAntiforgery()
+            .RequireRateLimiting(RateLimitPolicies.Uploads);
         group.MapGet("/{id:guid}", GetJob);
         group.MapGet("/{id:guid}/report", GetReport);
         group.MapGet("/", ListJobs);
@@ -54,6 +57,12 @@ public static class JobEndpoints
             {
                 error = $"Unsupported file type '{extension}'. Allowed: {string.Join(", ", AllowedExtensions.Keys)}"
             });
+        }
+
+        var (contentOk, contentError) = await UploadFileValidator.ValidateAsync(file, extension, cancellationToken);
+        if (!contentOk)
+        {
+            return Results.BadRequest(new { error = contentError });
         }
 
         var job = new AnalysisJob

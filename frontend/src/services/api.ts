@@ -5,6 +5,51 @@ import type { Report, TraceEvent, GraphNodeStatus } from '../types';
 // Default matches the Vigil.Api "http" launch profile.
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5027';
 
+// ─── Auth ───────────────────────────────────────────────────────────────────
+// The API issues JWTs at /api/auth/login. The token lives in localStorage and
+// rides on every request; a 401 clears it and bounces to /login.
+const TOKEN_KEY = 'vigil_token';
+
+export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY);
+
+export const clearToken = (): void => localStorage.removeItem(TOKEN_KEY);
+
+export const isAuthenticated = (): boolean => getToken() !== null;
+
+export const login = async (username: string, password: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    localStorage.setItem(TOKEN_KEY, data.token);
+    return true;
+  } catch (error) {
+    console.error('Login error:', error);
+    return false;
+  }
+};
+
+const handleUnauthorized = (): void => {
+  clearToken();
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login';
+  }
+};
+
+/** fetch() with the bearer token attached; 401 → logout + redirect. */
+const authFetch = async (url: string, init?: RequestInit): Promise<Response> => {
+  const headers = new Headers(init?.headers);
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) handleUnauthorized();
+  return res;
+};
+
 export type JobStatus = 'Queued' | 'Filtering' | 'Analyzing' | 'Done' | 'Failed';
 
 export interface JobSummary {
@@ -47,7 +92,7 @@ export interface ReportResponse {
 
 export const fetchJobs = async (page = 1, pageSize = 20): Promise<JobListResponse> => {
   try {
-    const res = await fetch(`${API_BASE}/api/jobs?page=${page}&pageSize=${pageSize}`);
+    const res = await authFetch(`${API_BASE}/api/jobs?page=${page}&pageSize=${pageSize}`);
     if (!res.ok) throw new Error(`GET /api/jobs failed: ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -58,7 +103,7 @@ export const fetchJobs = async (page = 1, pageSize = 20): Promise<JobListRespons
 
 export const fetchJob = async (id: string): Promise<JobSummary | null> => {
   try {
-    const res = await fetch(`${API_BASE}/api/jobs/${id}`);
+    const res = await authFetch(`${API_BASE}/api/jobs/${id}`);
     if (!res.ok) return null;
     return await res.json();
   } catch (error) {
@@ -70,7 +115,7 @@ export const fetchJob = async (id: string): Promise<JobSummary | null> => {
 /** 200 → report; 404/409 (not finished yet) → null. */
 export const fetchJobReport = async (id: string): Promise<ReportResponse | null> => {
   try {
-    const res = await fetch(`${API_BASE}/api/jobs/${id}/report`);
+    const res = await authFetch(`${API_BASE}/api/jobs/${id}/report`);
     if (!res.ok) return null;
     return await res.json();
   } catch (error) {
@@ -83,7 +128,7 @@ export const uploadFile = async (file: File): Promise<{ message: string; report_
   try {
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetch(`${API_BASE}/api/jobs`, { method: 'POST', body: formData });
+    const res = await authFetch(`${API_BASE}/api/jobs`, { method: 'POST', body: formData });
     if (!res.ok) {
       const body = await res.json().catch(() => null);
       throw new Error(body?.error || `Upload failed: ${res.status}`);
@@ -343,7 +388,7 @@ export interface MitreStats {
 /** MITRE ATT&CK aggregation for the Metrics heatmap. */
 export const fetchMitreStats = async (): Promise<MitreStats | null> => {
   try {
-    const res = await fetch(`${API_BASE}/api/stats/mitre`);
+    const res = await authFetch(`${API_BASE}/api/stats/mitre`);
     if (!res.ok) throw new Error(`GET /api/stats/mitre failed: ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -366,7 +411,7 @@ export interface ApiStats {
 /** Server-side aggregated stats for the dashboard KPI strip. */
 export const fetchStatsApi = async (): Promise<ApiStats | null> => {
   try {
-    const res = await fetch(`${API_BASE}/api/stats`);
+    const res = await authFetch(`${API_BASE}/api/stats`);
     if (!res.ok) throw new Error(`GET /api/stats failed: ${res.status}`);
     return await res.json();
   } catch (error) {

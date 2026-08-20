@@ -110,7 +110,7 @@ public class SynthesisPipelineTests : IClassFixture<VigilApiFactory>, IAsyncLife
         Assert.Contains("Block the sender domain", report.RecommendedActions);
 
         // The API serves the same report with jsonb columns parsed into arrays.
-        var client = _factory.CreateClient();
+        var client = await _factory.CreateAuthenticatedClientAsync();
         var response = await client.GetAsync($"/api/jobs/{jobId}/report");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -168,7 +168,7 @@ public class SynthesisPipelineTests : IClassFixture<VigilApiFactory>, IAsyncLife
     [Fact]
     public async Task Report_endpoint_returns_404_for_unknown_job()
     {
-        var client = _factory.CreateClient();
+        var client = await _factory.CreateAuthenticatedClientAsync();
 
         var response = await client.GetAsync($"/api/jobs/{Guid.NewGuid()}/report");
 
@@ -179,7 +179,7 @@ public class SynthesisPipelineTests : IClassFixture<VigilApiFactory>, IAsyncLife
     public async Task Report_endpoint_returns_409_while_job_has_no_report()
     {
         var jobId = await UploadFixtureAsync("email.eml"); // uploaded, never processed
-        var client = _factory.CreateClient();
+        var client = await _factory.CreateAuthenticatedClientAsync();
 
         var response = await client.GetAsync($"/api/jobs/{jobId}/report");
 
@@ -223,7 +223,7 @@ public class SynthesisPipelineTests : IClassFixture<VigilApiFactory>, IAsyncLife
 
     private async Task<Guid> UploadFixtureAsync(string fixtureName)
     {
-        var client = _factory.CreateClient();
+        var client = await _factory.CreateAuthenticatedClientAsync();
 
         var fixturePath = Path.Combine(AppContext.BaseDirectory, "fixtures", fixtureName);
         await using var fileStream = File.OpenRead(fixturePath);

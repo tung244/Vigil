@@ -37,7 +37,7 @@ public class UploadApiTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
     [Fact]
     public async Task Upload_eml_accepts_persists_and_queues_job()
     {
-        var client = _factory.CreateClient();
+        var client = await _factory.CreateAuthenticatedClientAsync();
 
         var fixturePath = Path.Combine(AppContext.BaseDirectory, "fixtures", "email.eml");
         await using var fileStream = File.OpenRead(fixturePath);
@@ -102,7 +102,7 @@ public class UploadApiTests : IClassFixture<VigilApiFactory>, IAsyncLifetime
     [Fact]
     public async Task Upload_unsupported_extension_returns_400()
     {
-        var client = _factory.CreateClient();
+        var client = await _factory.CreateAuthenticatedClientAsync();
 
         using var content = new MultipartFormDataContent();
         using var fileContent = new ByteArrayContent("not an artifact"u8.ToArray());
