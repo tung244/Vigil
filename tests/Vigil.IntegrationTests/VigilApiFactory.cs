@@ -13,10 +13,10 @@ namespace Vigil.IntegrationTests;
 /// </summary>
 public class VigilApiFactory : WebApplicationFactory<Program>
 {
-    public const string PostgresConnection =
-        "Host=localhost;Port=55432;Database=vigil_api_test;Username=vigil;Password=vigil_dev_password";
+    // Env-overridable via VIGIL_TEST_POSTGRES / VIGIL_TEST_RABBITMQ (see TestConnections).
+    public static string PostgresConnection => TestConnections.Postgres;
 
-    public const string RabbitMqConnection = "amqp://vigil:vigil_dev_password@localhost:5672/";
+    public static string RabbitMqConnection => TestConnections.RabbitMq;
 
     public string UploadDir { get; } =
         Path.Combine(Path.GetTempPath(), $"vigil-test-uploads-{Guid.NewGuid():N}");
@@ -29,6 +29,7 @@ public class VigilApiFactory : WebApplicationFactory<Program>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Postgres"] = PostgresConnection,
+                ["ConnectionStrings:RabbitMq"] = RabbitMqConnection,
                 ["Storage:UploadDir"] = UploadDir
             });
         });

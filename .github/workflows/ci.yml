@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    # Service containers mirror the local docker-compose stack. The ports and
+    # credentials match the integration-test defaults, and are also passed
+    # explicitly via VIGIL_TEST_POSTGRES / VIGIL_TEST_RABBITMQ below.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: vigil
+          POSTGRES_PASSWORD: vigil_dev_password
+          # The WebApplicationFactory tests migrate this database; tests that
+          # need isolation create their own throwaway databases on the fly.
+          POSTGRES_DB: vigil_api_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U vigil -d vigil_api_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3
+        env:
+          RABBITMQ_DEFAULT_USER: vigil
+          RABBITMQ_DEFAULT_PASS: vigil_dev_password
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Restore local tools (dotnet-ef)
+        run: dotnet tool restore
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      # The ONNX models (models/phishing.onnx ~1.25 GB, models/minilm.onnx) are
+      # gitignored, so the model-dependent integration tests (MlParityTests,
+      # EmbeddingParityTests, RagRetrievalTests) skip via SkippableFact on CI —
+      # that is expected, not a failure.
+      - name: Test
+        run: dotnet test --no-build --configuration Release
+        env:
+          VIGIL_TEST_POSTGRES: "Host=localhost;Port=55432;Database=vigil_api_test;Username=vigil;Password=vigil_dev_password"
+          VIGIL_TEST_RABBITMQ: "amqp://vigil:vigil_dev_password@localhost:5672/"
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build

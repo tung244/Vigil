@@ -16,8 +16,7 @@ namespace Vigil.IntegrationTests;
 /// </summary>
 public class AnalysisJobPersistenceTests
 {
-    private const string ServerConnection =
-        "Host=localhost;Port=55432;Database=postgres;Username=vigil;Password=vigil_dev_password";
+    private static string ServerConnection => TestConnections.PostgresServer;
 
     [Fact]
     public async Task AnalysisJob_round_trips_through_postgres()
