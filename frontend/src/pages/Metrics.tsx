@@ -41,6 +41,7 @@ export default function Metrics() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [sevFilter, setSevFilter] = useState('all');
   const [verdictFilter, setVerdictFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState<'overview' | 'evidence' | 'json'>('overview');
 
   const toggleSort = (key: 'time' | 'risk') => {
     if (sortKey === key) {
@@ -338,6 +339,7 @@ export default function Metrics() {
                   <tr key={r.report_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer" onClick={async () => {
                     setSelectedReport(r);
                     setReportDetail(null);
+                    setActiveTab('overview');
                     setReportDetail(await fetchReportDetail(r.report_id));
                   }}>
                     <td className="px-2 py-1.5 pl-3"><Mono className="font-bold text-primary">{r.report_id}</Mono></td>
@@ -407,19 +409,42 @@ export default function Metrics() {
           );
         })()}
 
-        {/* Report Detail Drawer */}
+        {/* Report Detail Flyout (Wazuh-style, tabbed) */}
         {selectedReport && (
           <div className="fixed inset-0 z-50 flex justify-end" onClick={() => { setSelectedReport(null); setReportDetail(null); }}>
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
-            <div className="relative w-full max-w-xl bg-white dark:bg-slate-900 shadow-2xl overflow-y-auto animate-slide-in" onClick={(e) => e.stopPropagation()}>
-              <div className="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 flex justify-between items-center z-10">
-                <div>
-                  <h3 className="font-black text-lg">Report Detail</h3>
-                  <p className="font-mono text-xs text-primary">{selectedReport.report_id}</p>
+            <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 shadow-2xl overflow-y-auto animate-slide-in" onClick={(e) => e.stopPropagation()}>
+              <div className="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 z-10">
+                <div className="p-4 pb-2 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-black text-lg">Report Detail</h3>
+                    <Mono className="font-bold text-primary">{selectedReport.report_id}</Mono>
+                  </div>
+                  <button onClick={() => { setSelectedReport(null); setReportDetail(null); }} className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors">
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
                 </div>
-                <button onClick={() => { setSelectedReport(null); setReportDetail(null); }} className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors">
-                  <span className="material-symbols-outlined text-sm">close</span>
-                </button>
+                {/* Tabs */}
+                <div className="px-4 flex gap-1">
+                  {([
+                    { id: 'overview', label: 'Overview', icon: 'dashboard' },
+                    { id: 'evidence', label: 'Evidence', icon: 'policy' },
+                    { id: 'json', label: 'Raw JSON', icon: 'data_object' },
+                  ] as const).map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors ${
+                        activeTab === tab.id
+                          ? 'border-primary text-primary'
+                          : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-sm">{tab.icon}</span>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {!reportDetail ? (
@@ -470,18 +495,44 @@ export default function Metrics() {
                     return null;
                   })()}
 
-                  {/* Status Bar */}
-                  <div className="flex gap-2 flex-wrap">
-                    <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase ${reportDetail.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30 text-green-600' : reportDetail.status === 'failed' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600'}`}>{reportDetail.status}</span>
-                    <span className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 uppercase">{reportDetail.event_type}</span>
-                    <span className={`px-3 py-1 rounded-lg text-xs font-bold ${(reportDetail.risk_score * 100) > 60 ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-600'}`}>Risk: {(reportDetail.risk_score * 100).toFixed(0)}%</span>
-                    {reportDetail.processing_time_seconds && (
-                      <span className="px-3 py-1 rounded-lg text-xs font-bold bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-xs">timer</span>
-                        {reportDetail.processing_time_seconds}s
-                      </span>
-                    )}
-                  </div>
+                  {/* ── Tab: Overview ── */}
+                  {activeTab === 'overview' && (<>
+
+                  {/* Risk gauge + status badges */}
+                  {(() => {
+                    const pct = Math.min(reportDetail.risk_score * 100, 100);
+                    const sev = normalizeSeverity(reportDetail.severity) ?? severityFromRisk(reportDetail.risk_score);
+                    const gaugeColor = pct >= 80 ? '#ef4444' : pct >= 60 ? '#f97316' : pct >= 40 ? '#eab308' : '#10b981';
+                    const c = 2 * Math.PI * 40;
+                    return (
+                      <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+                        <div className="relative flex-shrink-0">
+                          <svg width="72" height="72" viewBox="0 0 100 100" className="-rotate-90">
+                            <circle cx="50" cy="50" r="40" fill="none" strokeWidth="10" className="stroke-slate-200 dark:stroke-slate-700" />
+                            <circle cx="50" cy="50" r="40" fill="none" strokeWidth="10" stroke={gaugeColor} strokeLinecap="round"
+                              strokeDasharray={`${(pct / 100) * c} ${c}`} className="transition-all duration-700" />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-sm font-black font-mono">{pct.toFixed(0)}%</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Final Risk Score</span>
+                          <div className="flex gap-2 flex-wrap items-center">
+                            <SeverityBadge severity={reportDetail.severity ?? sev} />
+                            <StatusBadge status={reportDetail.status} />
+                            <span className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{reportDetail.event_type}</span>
+                            {reportDetail.processing_time_seconds && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-blue-500/40 bg-blue-500/15 text-blue-500 dark:text-blue-400 text-[10px] font-bold uppercase tracking-wider">
+                                <span className="material-symbols-outlined text-xs">timer</span>
+                                {reportDetail.processing_time_seconds}s
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Processing Timeline */}
                   {reportDetail.processing_time_seconds && (
@@ -566,24 +617,57 @@ export default function Metrics() {
                     </div>
                   )}
 
-                  {/* Findings */}
+                  </>)}
+
+                  {/* ── Tab: Evidence ── */}
+                  {activeTab === 'evidence' && (<>
+
+                  {/* Findings (evidence trail: claim + source) */}
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-sm text-amber-500">policy</span> Findings ({reportDetail.findings?.length || 0})</h4>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-sm text-amber-500">policy</span> Evidence Trail ({reportDetail.findings?.length || 0})</h4>
                     <div className="space-y-2">
                       {(reportDetail.findings || []).map((f: any, i: number) => (
                         <div key={i} className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
                           <div className="flex justify-between items-start mb-1">
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{f.agent}</span>
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                              f.severity === 'CRITICAL' ? 'bg-red-100 text-red-600' : f.severity === 'HIGH' ? 'bg-orange-100 text-orange-600' : f.severity === 'MEDIUM' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'
-                            }`}>{f.severity}</span>
+                            <Mono className="font-bold">{f.agent}</Mono>
+                            <SeverityBadge severity={f.severity} />
                           </div>
                           <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">{f.description?.substring(0, 300)}</p>
                           {f.mitre_tactic && <p className="text-[10px] text-indigo-500 mt-1 font-bold">MITRE: {f.mitre_tactic}</p>}
                         </div>
                       ))}
+                      {(reportDetail.findings || []).length === 0 && (
+                        <p className="text-[11px] text-slate-500 italic">No evidence recorded for this report.</p>
+                      )}
                     </div>
                   </div>
+
+                  {/* MITRE techniques */}
+                  {reportDetail.mitre_techniques?.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-sm text-indigo-500">grid_on</span> MITRE Techniques ({reportDetail.mitre_techniques.length})</h4>
+                      <div className="flex flex-wrap gap-1">
+                        {reportDetail.mitre_techniques.map((t: string) => (
+                          <Mono key={t} className="px-1.5 py-0.5 rounded border border-indigo-500/40 bg-indigo-500/15 text-indigo-500 dark:text-indigo-400 font-bold">{t}</Mono>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recommended actions */}
+                  {reportDetail.recommended_actions?.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-sm text-emerald-500">task_alt</span> Recommended Actions ({reportDetail.recommended_actions.length})</h4>
+                      <ul className="space-y-1">
+                        {reportDetail.recommended_actions.map((a: string, i: number) => (
+                          <li key={i} className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+                            <span className="material-symbols-outlined text-sm text-emerald-500 mt-[-1px]">check_circle</span>
+                            {a}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
                   {/* IOCs */}
                   {reportDetail.iocs?.length > 0 && (
@@ -624,13 +708,26 @@ export default function Metrics() {
                     </div>
                   )}
 
-                  {/* Error Logs */}
-                  {reportDetail.error_logs?.length > 0 && (
+                  </>)}
+
+                  {/* Error Logs (Overview) */}
+                  {activeTab === 'overview' && reportDetail.error_logs?.length > 0 && (
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-red-500 mb-2">Errors ({reportDetail.error_logs.length})</h4>
                       {reportDetail.error_logs.map((e: string, i: number) => (
                         <p key={i} className="text-[10px] text-red-400 font-mono bg-red-50 dark:bg-red-900/10 p-2 rounded mb-1">{e}</p>
                       ))}
+                    </div>
+                  )}
+
+                  {/* ── Tab: Raw JSON ── */}
+                  {activeTab === 'json' && (
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <div className="px-3 py-2 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
+                        <span className="material-symbols-outlined text-sm text-slate-400">data_object</span>
+                        <Mono className="font-bold text-slate-500">report.json</Mono>
+                      </div>
+                      <pre className="font-mono text-[11px] leading-relaxed bg-slate-950 text-slate-300 p-4 overflow-x-auto whitespace-pre">{JSON.stringify(reportDetail, null, 2)}</pre>
                     </div>
                   )}
                 </div>

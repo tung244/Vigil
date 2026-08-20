@@ -427,6 +427,8 @@ export const fetchReportDetail = async (id: string): Promise<any> => {
     event_type: job.fileType === 'eml' ? 'email' : job.fileType,
     status: toViewStatus(job.status),
     risk_score: (report?.riskScore ?? 0) / 10,
+    severity: report?.severity ?? null,
+    created_at: job.createdAt,
     final_report: report?.summaryMarkdown ?? '',
     findings: (report?.evidenceTrail ?? []).map((e) => ({
       agent: e.source,
