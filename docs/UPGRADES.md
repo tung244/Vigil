@@ -311,9 +311,124 @@ Token hết hạn/sai → 401 → frontend tự xoá token + về /login
 
 `4c3aa12` — toàn bộ món 1 (backend + frontend + tests)
 
-## Món 3 — Sigma rule pack cho Tier 1 (chưa làm)
+## Món 3 — Sigma rule pack cho Tier 1 (hoàn thành)
 
-Kế hoạch: Sigma-compatible rule engine mini (parse YAML rule → match event),
-rule pack CloudTrail từ SigmaHQ nạp runtime vào thư mục `rules/`, matched rule
-ghi vào evidence trail dạng `rule:sigma:<tên-rule>`.
-*(Sẽ viết chi tiết vào mục này khi hoàn thành.)*
+### Mục tiêu
+
+Tier 1 trước đây chỉ có rule hard-code trong C# (high-risk API list, recon
+burst, z-score...). Món này thêm khả năng **nạp detection rule từ file YAML
+chuẩn Sigma** (format rule cộng đồng của SigmaHQ, dùng chung trong ngành SOC):
+thêm rule mới = thêm 1 file .yml, không cần sửa code/rebuild logic. Kèm rule
+pack CloudTrail viết theo mẫu SigmaHQ. Đây là điểm "chiều sâu detection" để kể
+trong phỏng vấn: hiểu Sigma là gì, tại sao rule-as-code, và trade-off khi tự
+viết engine mini thay vì kéo nguyên sigma-cli về.
+
+### Thay đổi chi tiết (commit `4fbf043`)
+
+**1. Mini Sigma engine** — `src/Vigil.Core/Tier1/Sigma/` (5 file mới)
+
+- `SigmaYamlParser.cs` — parse YAML bằng YamlDotNet (package mới, 16.3.0).
+  Hỗ trợ subset: `title/id/level/description` + `detection` với map selection
+  (`field: value`, `field: [list]` = OR, `field|modifier: value`) và
+  `condition`. Shape không hỗ trợ (keywords selection, aggregation `count()`
+  near...) → throw `FormatException` để loader skip file và ghi lỗi, không bao
+  giờ làm sập detection vì 1 rule hỏng.
+- `SigmaConditionExpression.cs` — mini-language cho `condition`: `and`/`or`/
+  `not`/ngoặc + `1 of them`, `1 of pattern*`, `all of ...`. Tokenize → parse
+  recursive-descent thành AST → `1 of pattern*` được expand thành Or-chain các
+  selection cụ thể ngay lúc load (validate luôn condition có tham chiếu
+  selection không tồn tại → reject rule).
+- `SigmaRule.cs` — model: `SigmaRule` (có `Slug` từ title, vd
+  "AWS Root Account Usage" → `aws_root_account_usage`), `SigmaSelection`
+  (các tiêu chí AND), `SigmaFieldMatcher` (values OR; modifier
+  exact/contains/startswith/endswith; wildcard `*`/`?` case-insensitive bằng
+  glob matcher tự viết — 2 con trỏ + backtrack).
+- `SigmaFieldNormalizer.cs` — **mấu chốt kết nối**: rule SigmaHQ viết cho
+  CloudTrail JSON (`userIdentity.userName`), còn CSV của mình flatten
+  (`userIdentityuserName`). Normalize cả hai về cùng dạng (lowercase, bỏ mọi
+  ký tự không phải chữ/số) nên khớp nhau.
+- `SigmaEngine.cs` — `LoadFromDirectory()` đọc đệ quy `*.yml`/`*.yaml`;
+  `Evaluate(event)` trả các rule match (kết quả selection được cache per-rule
+  per-event); `EvaluateBatch()` gom distinct rule + số hit cho cả file log.
+  `SigmaEngine.Default` (lazy singleton) nạp từ `$VIGIL_RULES_DIR` hoặc
+  `<thư mục chạy>/rules`; không có thư mục → engine rỗng, no-op sạch.
+  `LoadErrors` expose các file rule parse hỏng.
+
+**2. Nối vào pipeline Tier 1**
+
+- `CsvLogParser.cs` — mỗi `CsvLogRecord` giờ mang thêm `Fields`: dictionary
+  **toàn bộ cột** của dòng (key = header đã normalize). Trước đây parser bỏ
+  mọi cột không nằm trong alias map, Sigma sẽ không có gì để match.
+- `CsvLogRuleChecks.Analyze(csv, engine?)` — overload mới, tham số engine
+  optional (null → `SigmaEngine.Default`). Check thứ 6 `sigma_rules`: rule
+  match → `MatchedRules` thêm `sigma:<slug>` (đúng convention evidence trail),
+  `Extracted["sigmaRulesLoaded"]` ghi số rule đã nạp, `RuleCheck.Detail` liệt
+  kê "Title [level] × hits". Sigma nằm chung hệ "family" khi tính RiskScore
+  (mỗi family +15, cap 100) và tự kế thừa verdict policy sẵn có: 1 rule match
+  → Suspicious.
+- `src/Vigil.Worker/Vigil.Worker.csproj` — copy `rules/**` vào output
+  (`<output>/rules`) để `SigmaEngine.Default` thấy khi Worker chạy.
+
+**3. Rule pack** — `rules/cloudtrail/` (9 rule, viết theo mẫu SigmaHQ)
+
+| Rule | Level | Phát hiện |
+|---|---|---|
+| aws_console_login_without_mfa | high | ConsoleLogin không có `MFAUsed: Yes` |
+| aws_root_account_usage | critical | `userIdentity.type: Root` (trừ call bị error) |
+| aws_cloudtrail_logging_tampered | critical | StopLogging/DeleteTrail/UpdateTrail/PutEventSelectors |
+| aws_security_group_open_to_world | high | AuthorizeSecurityGroupIngress với 0.0.0.0/0 hoặc ::/0 |
+| aws_iam_backdoor_access_key | medium | CreateAccessKey (persistence) |
+| aws_iam_privilege_escalation_policy | high | Attach*/Put*Policy, CreatePolicyVersion... |
+| aws_config_recording_disabled | high | Tắt/xoá AWS Config recorder |
+| aws_guardduty_disruption | critical | Xoá/tắt GuardDuty detector, threat intel set |
+| aws_sts_assume_role | medium | AssumeRole/SAML/WebIdentity (pivot) |
+
+Lưu ý: rule nào tham chiếu field CSV không có (vd `additionalEventData.MFAUsed`)
+thì đơn giản không match — missing field = không match, không lỗi. Pack match
+tốt nhất với CSV export đủ cột CloudTrail.
+
+### Cách hoạt động
+
+```
+rules/cloudtrail/*.yml ──(copy vào output khi build Worker)──► <bin>/rules
+        │
+Worker start → SigmaEngine.Default lazy-load 1 lần (parse YAML → AST, validate)
+        │
+Job CSV → CsvLogParser (mỗi dòng → Fields dict) → 5 check hard-code như cũ
+        → check 6: EvaluateBatch(Fields) → rule match → sigma:<slug> vào
+          MatchedRules → jsonb tier1_results → Tier 2 đọc evidence như thường
+```
+
+### Cách kiểm chứng
+
+- 13 unit test mới (`tests/Vigil.UnitTests/Tier1/Sigma/`): exact/list-OR/
+  contains/wildcard, `and not`, `1 of pattern*`, missing field không match,
+  field dotted↔flattened, rule hỏng vào `LoadErrors` chứ không throw, condition
+  tham chiếu selection ma bị reject, `EvaluateBatch` đếm hit, **shipped pack
+  load sạch 0 lỗi và đủ ≥ 8 rule**, tích hợp `CsvLogRuleChecks` (match →
+  `sigma:` + Suspicious; engine rỗng → no-op; loaded nhưng không match → pass).
+- `dotnet test tests/Vigil.UnitTests -c Release` → 194 xanh (181 cũ + 13 mới).
+- Integration 42/43 như cũ (1 fail môi trường đã ghi ở Món 1 — Worker đang
+  chạy ngoài ăn message test).
+- Kiểm tay: `src/Vigil.Worker/bin/Release/net9.0/rules/cloudtrail/` có đủ
+  9 file .yml sau build.
+
+### Ghi chú / Giới hạn
+
+- Subset Sigma, **không phải** full spec: chưa có keywords selection,
+  aggregation (`count() by user > 5` near...), correlation, `|re` regex,
+  value modifiers nâng cao (`|cidr`, `|base64`). Rule SigmaHQ xịn copy thẳng
+  về có thể parse fail → rơi vào `LoadErrors`, cần lược bớt cho hợp subset.
+- `all of pattern*` với 0 selection khớp → false (hiện thực chọn vậy; Sigma
+  spec mập mờ chỗ này).
+- Rules load 1 lần lúc Worker khởi động (lazy static) — sửa file .yml phải
+  restart Worker. Chưa có hot-reload.
+- Rule chỉ chạy cho artifact CSV (CloudTrail-style). Email (.eml) có hệ rule
+  riêng (`EmailRuleChecks`), chưa đưa Sigma vào — Sigma vốn cho log/event,
+  không hợp email lắm.
+- Thêm rule mới: thả file .yml vào `rules/cloudtrail/` (hoặc subdir khác),
+  rebuild để copy, restart Worker.
+
+### Commits
+
+`4fbf043` — engine + parser wiring + 9 rules + tests
