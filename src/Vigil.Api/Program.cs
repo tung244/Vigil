@@ -31,6 +31,7 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "Vigil.Api" }));
 app.MapJobEndpoints();
+app.MapStatsEndpoints();
 
 app.Run();
 
