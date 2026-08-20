@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { Link } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { SeverityBadge, StatusBadge, Mono } from '../components/badges';
+import { ReportFlyout } from '../components/ReportFlyout';
 import {
   fetchLatestReport, fetchNodes, fetchTraces, uploadFile,
   fetchJobs, fetchJobReport, fetchStatsApi,
@@ -80,7 +81,7 @@ export default function SOCDashboard() {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [jobReports, setJobReports] = useState<Record<string, ReportResponse | null>>({});
   const [apiStats, setApiStats] = useState<ApiStats | null>(null);
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedJob, setSelectedJob] = useState<JobSummary | null>(null);
   const [showPipeline, setShowPipeline] = useState(true);
   const [showTrace, setShowTrace] = useState(true);
 
@@ -258,11 +259,11 @@ export default function SOCDashboard() {
             <div className="divide-y divide-slate-100 dark:divide-slate-800 overflow-y-auto max-h-[480px] min-h-[200px]">
               {jobs.length > 0 ? jobs.map((job) => {
                 const rep = jobReports[job.id] ?? null;
-                const selected = selectedJobId === job.id;
+                const selected = selectedJob?.id === job.id;
                 return (
                   <div
                     key={job.id}
-                    onClick={() => setSelectedJobId(job.id)}
+                    onClick={() => setSelectedJob(job)}
                     className={`px-3 py-1.5 flex items-center gap-2 text-xs cursor-pointer transition-colors border-l-2 ${
                       selected
                         ? 'bg-primary/5 dark:bg-primary/10 border-primary'
@@ -843,6 +844,11 @@ export default function SOCDashboard() {
           )}
         </div>
       </main>
+
+      {/* Report Flyout — opened from the live alert feed (shared component, W8) */}
+      {selectedJob && (
+        <ReportFlyout reportId={selectedJob.id} job={selectedJob} onClose={() => setSelectedJob(null)} />
+      )}
 
       {/* Threat Intel Side-drawer */}
       {showIntel && (
