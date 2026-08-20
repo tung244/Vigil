@@ -3,7 +3,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Header } from '../components/Header';
 import { SeverityBadge, StatusBadge, Mono, normalizeSeverity, severityFromRisk } from '../components/badges';
-import { fetchStats, fetchReportDetail } from '../services/api';
+import { fetchStats, fetchReportDetail, fetchMitreStats } from '../services/api';
+import type { MitreStats } from '../services/api';
+import { MitreHeatmap } from '../components/MitreHeatmap';
 
 type Verdict = 'MALICIOUS' | 'SUSPICIOUS' | 'SAFE';
 
@@ -28,6 +30,7 @@ const VERDICT_ICONS: Record<Verdict, string> = {
 
 export default function Metrics() {
   const [stats, setStats] = useState<any>(null);
+  const [mitre, setMitre] = useState<MitreStats | null>(null);
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [reportDetail, setReportDetail] = useState<any>(null);
   const [blockedIPs, setBlockedIPs] = useState<Set<string>>(new Set());
@@ -52,6 +55,7 @@ export default function Metrics() {
   useEffect(() => {
     const load = async () => {
       setStats(await fetchStats());
+      setMitre(await fetchMitreStats());
     };
     load();
     const interval = setInterval(load, 5000);
@@ -235,76 +239,13 @@ export default function Metrics() {
           </div>
         </div>
 
-        {/* MITRE ATT&CK Donut Chart */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm mb-6 flex flex-col md:flex-row items-center md:items-start gap-8">
-          <div className="flex-1 w-full">
-            <h3 className="text-sm font-bold mb-8 flex items-center gap-2 text-slate-800 dark:text-slate-100 uppercase tracking-widest">
-              MITRE ATT&CK
-            </h3>
-            
-            {Object.keys(stats.mitre_tactics || {}).length === 0 ? (
-              <div className="text-sm text-slate-500 w-full py-8 font-medium italic text-center">No MITRE tactics recorded yet.</div>
-            ) : (
-              <div className="flex flex-col md:flex-row items-center gap-12 md:gap-24 pl-4 md:pl-12">
-                {/* Donut SVG */}
-                <div className="relative flex-shrink-0">
-                  <svg width="200" height="200" viewBox="0 0 100 100" className="-rotate-90">
-                    {/* Inner light solid circle */}
-                    <circle cx="50" cy="50" r="26" className="fill-blue-100 dark:fill-blue-900/40" />
-                    
-                    {/* Slices */}
-                    {(() => {
-                      const entries = Object.entries(stats.mitre_tactics || {}).sort((a: any, b: any) => b[1] - a[1]);
-                      const totalMitre = entries.reduce((acc: any, [_, v]: any) => acc + (v as number), 0);
-                      const mitreRadius = 40;
-                      const mitreCircumference = 2 * Math.PI * mitreRadius;
-                      let currentOffset = 0;
-                      const colors = ['#2563eb', '#3b82f6', '#facc15', '#60a5fa', '#84cc16', '#a855f7', '#6366f1', '#ec4899'];
-
-                      return entries.map(([tactic, count]: any, index) => {
-                        const pct = count / totalMitre;
-                        const dashLength = pct * mitreCircumference;
-                        const offset = currentOffset;
-                        currentOffset += dashLength;
-                        const color = colors[index % colors.length];
-
-                        return (
-                          <circle 
-                            key={tactic} 
-                            cx="50" cy="50" r={mitreRadius} 
-                            fill="none" 
-                            stroke={color} 
-                            strokeWidth="11"
-                            strokeDasharray={`${dashLength} ${mitreCircumference - dashLength}`}
-                            strokeDashoffset={-offset}
-                            className="transition-all duration-1000 ease-out drop-shadow-sm"
-                          />
-                        );
-                      });
-                    })()}
-                  </svg>
-                </div>
-                
-                {/* Legend */}
-                <div className="flex flex-col gap-3 justify-center">
-                  {Object.entries(stats.mitre_tactics || {}).sort((a: any, b: any) => b[1] - a[1]).map(([tactic, count]: any, index) => {
-                    const colors = ['#2563eb', '#3b82f6', '#facc15', '#60a5fa', '#84cc16', '#a855f7', '#6366f1', '#ec4899'];
-                    const color = colors[index % colors.length];
-
-                    return (
-                      <div key={tactic} className="flex items-center gap-3">
-                        <span className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }}></span>
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{tactic}</span>
-                        </div>
-                        <span className="ml-auto text-[10px] font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full text-slate-500">{count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
+        {/* MITRE ATT&CK Heatmap */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm mb-6">
+          <h3 className="text-sm font-bold mb-5 flex items-center gap-2 text-slate-800 dark:text-slate-100 uppercase tracking-widest">
+            <span className="material-symbols-outlined text-primary text-base">grid_on</span>
+            MITRE ATT&CK Coverage
+          </h3>
+          <MitreHeatmap data={mitre} />
         </div>
 
 

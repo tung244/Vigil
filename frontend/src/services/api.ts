@@ -327,6 +327,31 @@ export const fetchNodes = async (): Promise<GraphNodeStatus[]> => {
   });
 };
 
+// ─── Stats endpoints (Vigil.Api) ────────────────────────────────────────────
+
+export interface MitreTechnique {
+  techniqueId: string;
+  tactic: string;
+  count: number;
+}
+
+export interface MitreStats {
+  techniques: MitreTechnique[];
+  tactics: string[]; // already sorted in kill-chain order by the API
+}
+
+/** MITRE ATT&CK aggregation for the Metrics heatmap. */
+export const fetchMitreStats = async (): Promise<MitreStats | null> => {
+  try {
+    const res = await fetch(`${API_BASE}/api/stats/mitre`);
+    if (!res.ok) throw new Error(`GET /api/stats/mitre failed: ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    console.error('API fetch error:', error);
+    return null;
+  }
+};
+
 /** Aggregated stats for the Metrics page, computed from jobs + reports. */
 export const fetchStats = async (): Promise<any> => {
   const { items, total } = await fetchJobs(1, 100);
