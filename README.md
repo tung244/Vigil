@@ -38,6 +38,7 @@ src/
   Vigil.Worker/          RabbitMQ consumer, Tier 1 + Tier 2 pipeline
   Vigil.Core/            Domain models, state machine, interfaces
   Vigil.Infrastructure/  EF Core, RabbitMQ, threat-intel clients, ONNX, SK agents
+frontend/                React 19 + Vite + Tailwind dashboard (rewired to Vigil.Api)
 tests/
   Vigil.UnitTests/
   Vigil.IntegrationTests/
@@ -45,7 +46,8 @@ tests/
 
 ## Status
 
-Step 0 complete (solution skeleton). See `PLAN.md` for the roadmap.
+Steps 0–10 complete (backend pipeline + React dashboard hooked to the .NET API).
+See `PLAN.md` for the roadmap; Step 11 (CI & docs) remains.
 
 ## Build & Test
 
@@ -53,3 +55,29 @@ Step 0 complete (solution skeleton). See `PLAN.md` for the roadmap.
 dotnet build
 dotnet test
 ```
+
+## Run the full stack locally
+
+```bash
+# 1. Infrastructure (Postgres + pgvector, RabbitMQ)
+docker compose up -d
+
+# 2. API — http://localhost:5027 (CORS is enabled for http://localhost:5173 in Development)
+dotnet run --project src/Vigil.Api
+
+# 3. Worker (RabbitMQ consumer, Tier-1 + Tier-2 pipeline)
+dotnet run --project src/Vigil.Worker
+
+# 4. Frontend — http://localhost:5173
+cd frontend
+npm install
+npm run dev
+```
+
+The dashboard reads the API base URL from `VITE_API_BASE_URL`
+(see `frontend/.env.example`); it defaults to `http://localhost:5027`, matching the
+API's `http` launch profile.
+
+Without a Gemini API key in the Worker config (`Llm` section), `.eml` jobs fail at
+`tier2.email_analysis` by design, while `.csv`/`.json` jobs complete end-to-end with
+a deterministic (rule-based) report.
