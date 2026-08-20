@@ -1,0 +1,20 @@
+title: AWS GuardDuty Detector Disruption
+id: 6c0d3f9a-5e1b-4a8c-7f2d-9e4b6c3a0d08
+status: stable
+description: Detects deletion/disabling of GuardDuty detectors and threat intel sets — attackers blind the alarm before acting.
+author: SigmaHQ (adapted for Vigil)
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventSource: guardduty.amazonaws.com
+    eventName:
+      - DeleteDetector
+      - DeleteIPSet
+      - DeleteThreatIntelSet
+      - StopMonitoringMembers
+      - UpdateDetector
+      - DisassociateFromMasterAccount
+  condition: selection
+level: critical

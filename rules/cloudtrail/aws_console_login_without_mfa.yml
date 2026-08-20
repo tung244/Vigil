@@ -1,0 +1,16 @@
+title: AWS Console Login Without MFA
+id: 8f0608f1-3bf9-4f0c-89d8-3c6f2b1a9e01
+status: stable
+description: Detects AWS console logins that did not use multi-factor authentication.
+author: SigmaHQ (adapted for Vigil)
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventSource: signin.amazonaws.com
+    eventName: ConsoleLogin
+  filter_mfa:
+    additionalEventData.MFAUsed: 'Yes'
+  condition: selection and not filter_mfa
+level: high

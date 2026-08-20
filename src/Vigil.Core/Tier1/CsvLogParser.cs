@@ -52,6 +52,7 @@ public static class CsvLogParser
         var headers = SplitLine(headerLine)
             .Select(h => ColumnAliases.TryGetValue(h.Trim(), out var mapped) ? mapped : null)
             .ToList();
+        var rawHeaders = SplitLine(headerLine).Select(h => h.Trim()).ToList();
 
         string? line;
         while ((line = reader.ReadLine()) is not null)
@@ -62,6 +63,16 @@ public static class CsvLogParser
             }
 
             var fields = SplitLine(line);
+            var rawFields = new Dictionary<string, string>(StringComparer.Ordinal);
+            for (var i = 0; i < rawHeaders.Count && i < fields.Count; i++)
+            {
+                var key = Sigma.SigmaFieldNormalizer.Normalize(rawHeaders[i]);
+                if (key.Length > 0)
+                {
+                    rawFields[key] = fields[i].Trim();
+                }
+            }
+
             var record = new CsvLogRecord
             {
                 EventTime = Field(headers, fields, nameof(CsvLogRecord.EventTime)),
@@ -71,6 +82,7 @@ public static class CsvLogParser
                 ErrorCode = Field(headers, fields, nameof(CsvLogRecord.ErrorCode)),
                 ErrorMessage = Field(headers, fields, nameof(CsvLogRecord.ErrorMessage)),
                 UserAgent = Field(headers, fields, nameof(CsvLogRecord.UserAgent)),
+                Fields = rawFields,
             };
             records.Add(record);
         }

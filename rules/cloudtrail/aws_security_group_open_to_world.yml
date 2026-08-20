@@ -1,0 +1,17 @@
+title: AWS Security Group Opened To The World
+id: 7b2f4d1a-6c9e-4b3f-8a1d-5e0c9f2d4b04
+status: stable
+description: Detects ingress rules authorizing 0.0.0.0/0 or ::/0 — the instance becomes reachable from the whole internet.
+author: SigmaHQ (adapted for Vigil)
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventName: AuthorizeSecurityGroupIngress
+  cidr_v4:
+    requestParameters.cidrIp|contains: 0.0.0.0/0
+  cidr_v6:
+    requestParameters.ipv6CidrBlock|contains: ::/0
+  condition: selection and 1 of cidr_*
+level: high

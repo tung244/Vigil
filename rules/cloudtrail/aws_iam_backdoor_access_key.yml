@@ -1,0 +1,14 @@
+title: AWS IAM Backdoor Via New Access Key
+id: 9e4c1a6b-2d7f-4c8e-9b0a-3f6d1e5c7a05
+status: stable
+description: Detects creation of new IAM access keys — a common persistence technique when the key is created for another user.
+author: SigmaHQ (adapted for Vigil)
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventSource: iam.amazonaws.com
+    eventName: CreateAccessKey
+  condition: selection
+level: medium

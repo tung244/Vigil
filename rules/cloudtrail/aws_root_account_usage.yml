@@ -1,0 +1,15 @@
+title: AWS Root Account Usage
+id: 2c1e4b7a-9d3f-4a1e-8b5c-7d0e6f3a2b02
+status: stable
+description: Detects any API activity performed by the AWS root account. Root should not be used for day-to-day work.
+author: SigmaHQ (adapted for Vigil)
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    userIdentity.type: Root
+  filter_success:
+    errorCode: '*'
+  condition: selection and not filter_success
+level: critical

@@ -12,6 +12,14 @@ public sealed record CsvLogRecord
     public string ErrorCode { get; init; } = string.Empty;
     public string ErrorMessage { get; init; } = string.Empty;
     public string UserAgent { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Every column of the row, keyed by normalized header (lowercase, only
+    /// alphanumerics — "userIdentity.userName" and "userIdentityuserName" both
+    /// become "useridentityusername"). The Sigma engine matches against this.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Fields { get; init; } =
+        new Dictionary<string, string>();
 }
 
 /// <summary>
@@ -59,8 +67,15 @@ public static class CsvLogRuleChecks
         "ConsoleLogin", "AssumeRole", "CreateAccessKey", "CreateLoginProfile",
     };
 
-    public static Tier1RuleReport Analyze(string csvContent)
+    public static Tier1RuleReport Analyze(string csvContent) => Analyze(csvContent, null);
+
+    /// <param name="sigma">
+    /// Rule pack to evaluate per record; null → <see cref="Sigma.SigmaEngine.Default"/>
+    /// (loads from $VIGIL_RULES_DIR or ./rules, empty when absent).
+    /// </param>
+    public static Tier1RuleReport Analyze(string csvContent, Sigma.SigmaEngine? sigma)
     {
+        sigma ??= Sigma.SigmaEngine.Default;
         var records = CsvLogParser.Parse(csvContent);
         var report = new Tier1RuleReport
         {
@@ -155,6 +170,21 @@ public static class CsvLogRuleChecks
             sensitiveFlags.Count > 0
                 ? $"{sensitiveFlags.Count} sensitive event(s) from previously unseen IPs."
                 : "None found."));
+
+        // 6. Sigma community rules (SigmaHQ-style pack loaded from rules/).
+        var sigmaMatches = sigma.EvaluateBatch(records.Select(r => r.Fields));
+        foreach (var (rule, _) in sigmaMatches)
+        {
+            report.MatchedRules.Add($"sigma:{rule.Slug}");
+        }
+
+        report.Extracted["sigmaRulesLoaded"] = sigma.RuleCount;
+        report.Checks.Add(new RuleCheck("sigma_rules",
+            sigmaMatches.Count > 0 ? "flag" : "pass",
+            sigmaMatches.Count > 0
+                ? string.Join("; ", sigmaMatches.Select(m =>
+                    $"{m.Rule.Title} [{m.Rule.Level}] × {m.Hits}"))
+                : sigma.RuleCount > 0 ? $"No match across {sigma.RuleCount} loaded rules." : "No rules loaded."));
 
         // Explainable score: 15 points per rule family that fired, capped at 100.
         var families = report.MatchedRules

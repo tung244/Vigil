@@ -16,4 +16,9 @@
     <ProjectReference Include="..\Vigil.Core\Vigil.Core.csproj" />
     <ProjectReference Include="..\Vigil.Infrastructure\Vigil.Infrastructure.csproj" />
   </ItemGroup>
+
+  <!-- Sigma rule pack → <output>/rules, loaded by SigmaEngine.Default. -->
+  <ItemGroup>
+    <Content Include="..\..\rules\**\*.yml" Link="rules\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -1,0 +1,17 @@
+title: AWS STS AssumeRole From External Account
+id: 4e8a2c7f-0b6d-4f3e-9a1c-8d5e2f7b4a09
+status: stable
+description: Detects AssumeRole calls — review whether the requesting identity should be pivoting into this role.
+author: SigmaHQ (adapted for Vigil)
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventSource: sts.amazonaws.com
+    eventName:
+      - AssumeRole
+      - AssumeRoleWithSAML
+      - AssumeRoleWithWebIdentity
+  condition: selection
+level: medium

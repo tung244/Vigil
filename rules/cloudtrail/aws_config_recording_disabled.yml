@@ -1,0 +1,17 @@
+title: AWS Config Recording Disabled
+id: 3f7b0e2d-8a4c-4d1f-9e5b-6c2a8d0f1e07
+status: stable
+description: Detects disabling or deleting AWS Config recorders/delivery channels — blinds configuration auditing.
+author: SigmaHQ (adapted for Vigil)
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventSource: config.amazonaws.com
+    eventName:
+      - StopConfigurationRecorder
+      - DeleteDeliveryChannel
+      - DeleteConfigurationRecorder
+  condition: selection
+level: high

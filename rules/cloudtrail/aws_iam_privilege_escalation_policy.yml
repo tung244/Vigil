@@ -1,0 +1,22 @@
+title: AWS IAM Privilege Escalation By Policy Attachment
+id: 1a5d8c3e-4f2b-4e9a-8d6c-0b7f3e2a9c06
+status: stable
+description: Detects users/roles being granted new or broader permissions through policy attachment or inline policies.
+author: SigmaHQ (adapted for Vigil)
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventSource: iam.amazonaws.com
+    eventName:
+      - AttachUserPolicy
+      - AttachRolePolicy
+      - AttachGroupPolicy
+      - PutUserPolicy
+      - PutRolePolicy
+      - PutGroupPolicy
+      - CreatePolicyVersion
+      - SetDefaultPolicyVersion
+  condition: selection
+level: high
