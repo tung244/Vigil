@@ -35,3 +35,6 @@ uploads/
 
 # Python tooling
 __pycache__/
+
+# tài liệu cá nhân, không đưa lên git
+CV_INTERVIEW.md
